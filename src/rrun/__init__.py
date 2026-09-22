@@ -12,7 +12,7 @@ try:
 
     __version__ = _pkg_version("rrun-cli")
 except Exception:  # noqa: BLE001 - 未安装（源码直跑）时回退
-    __version__ = "0.1.1"
+    __version__ = "0.1.2"
 
 from .executor import (
     AUDIT_LOG,

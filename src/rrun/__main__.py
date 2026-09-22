@@ -1,31 +1,36 @@
 # -*- coding: utf-8 -*-
-"""rrun — 远程机器执行器（Run Remote）。
+"""rrun CLI — run local scripts on remote machines over SSH stdin pipes.
 
-核心约定：脚本内容（可含中文，UTF-8）经 **stdin 管道**送远端解释器执行，
-全程不走命令行参数，规避 bash->ssh->cmd 多层转码/转义问题。
+Core contract: script content (UTF-8, CJK welcome) is piped to the remote
+interpreter via stdin, never via command-line arguments — sidestepping the
+bash -> ssh -> cmd quoting/encoding gauntlet.
 
-用法:
+Usage:
     rrun exec <host> <script.py|.ps1|.sh> [ascii_args...]
-    rrun exec <host> -c "Write-Output 中文"          # lang 按 OS 推断
+    rrun exec <host> -c "Write-Output hello"        # lang inferred from remote OS
     rrun exec pc_build temp/x.py --timeout 60
     rrun exec mac_mini --lang python temp/x.py
-    rrun setup <host|--all> [--force]   # 初始化统一 python 环境（3.12 venv + 阿里源）
-    rrun pip <host> -- list             # 在统一 venv 中执行 pip
-    rrun machines                       # 列出可用机器（脱敏，含来源）
-    rrun config                         # 查看 machines.json 来源链解析
-    rrun close [<host>|--all]           # 关闭 ssh 复用连接
+    rrun setup <host|--all> [--force]   # provision the unified python env (3.12 venv)
+    rrun pip <host> -- list             # run pip in the unified venv
+    rrun machines                       # list machines (redacted, with source)
+    rrun config                         # diagnose the machines.json source chain
+    rrun close [<host>|--all]           # close ssh multiplexed connections
 
-约定:
-    - lang 推断：文件扩展名（.py/.ps1/.sh）优先，否则按机器 OS（Windows=powershell，其他=bash）。
-    - 命令行参数只允许 ASCII，透传远端（python=sys.argv；bash=$@；powershell=$args）；
-      中文/特殊字符一律写进脚本内容或 JSON 文件。
-    - python 基线锁 3.12：探测命中统一 venv（优先）/standalone 基座/存量 3.12，
-      并校验版本号；全灭则报错提示先跑 setup（exec 热路径不做隐式安装）。
-    - 退出码：远端脚本退出码原样透传；255=ssh 传输层错误；124=本地超时。
-    - 内联 -c 内容自动落盘 ~/.rrun/drops/ 留档，可复跑（RRUN_HOME 可改根目录）。
-    - 审计：每次执行追加 ~/.rrun/log/remote-exec.jsonl。
+Conventions:
+    - Language inference: file extension (.py/.ps1/.sh) first, then remote OS
+      (Windows=powershell, others=bash).
+    - Command-line args are ASCII-only, passed through remotely
+      (python=sys.argv; bash=$@; powershell=$args); put CJK/special characters
+      in the script content or a JSON file instead.
+    - Remote python is pinned to 3.12: probes the unified venv (preferred),
+      the standalone base, then existing installs; all missing -> run `rrun setup`
+      first (exec never installs implicitly on the hot path).
+    - Exit codes: the remote exit code passes through unchanged;
+      255=ssh transport error; 124=local timeout.
+    - Inline -c content is archived under ~/.rrun/drops/ for replay.
+    - Audit: every execution appends to ~/.rrun/log/remote-exec.jsonl.
 
-退出码即远端退出码，可直接管道使用：远端 stdout→本机 stdout，stderr→stderr。
+Remote stdout -> local stdout, stderr -> stderr; the exit code is the remote one.
 """
 
 import argparse
@@ -45,7 +50,7 @@ def _parse_env(pairs) -> dict:
     env = {}
     for p in pairs or []:
         if "=" not in p:
-            raise SystemExit(f"[remote-exec] --env 格式应为 KEY=VAL: {p!r}")
+            raise SystemExit(f"[remote-exec] --env expects KEY=VAL, got: {p!r}")
         k, v = p.split("=", 1)
         env[k] = v
     return env
@@ -70,9 +75,9 @@ def cmd_exec(ns) -> int:
     file = ns.script or ""
     lang = ns.lang or ""
     if content and file:
-        raise SystemExit("[remote-exec] 脚本文件与 -c/--content 只能二选一")
+        raise SystemExit("[remote-exec] give either a script file or -c/--content, not both")
     if not content and not file:
-        raise SystemExit("[remote-exec] 缺少脚本：给文件路径或 -c/--content")
+        raise SystemExit("[remote-exec] nothing to run: pass a script file or -c/--content")
 
     # content 模式先确定 lang 再落盘（扩展名需要 lang）
     script_for_log = file
@@ -81,7 +86,7 @@ def cmd_exec(ns) -> int:
             lang = machine.default_lang
         dropped = _drop_inline(machine.name, lang, content)
         script_for_log = str(dropped)
-        print(f"[remote-exec] 内联内容已落盘: {dropped}", file=sys.stderr)
+        print(f"[remote-exec] inline content archived to {dropped}", file=sys.stderr)
 
     args = ns.args
 
@@ -106,11 +111,11 @@ def cmd_exec(ns) -> int:
     sys.stderr.buffer.flush()
 
     if result.timed_out:
-        print(f"[remote-exec] 超时（{ns.timeout}s），本地已终止", file=sys.stderr)
+        print(f"[remote-exec] local timeout ({ns.timeout}s), ssh client killed", file=sys.stderr)
     elif result.transport_error:
-        print(f"[remote-exec] ssh 传输层错误（连接失败/认证失败/掉线），exit=255", file=sys.stderr)
+        print(f"[remote-exec] ssh transport error (unreachable / auth failure / dropped), exit=255", file=sys.stderr)
     if not ns.quiet:
-        print(f"[remote-exec] exit={result.exit_code} 耗时 {result.duration:.1f}s", file=sys.stderr)
+        print(f"[remote-exec] exit={result.exit_code} took {result.duration:.1f}s", file=sys.stderr)
     return result.exit_code
 
 
@@ -138,19 +143,20 @@ def cmd_machines(ns) -> int:
 
 def cmd_config(ns) -> int:
     infos = scan_sources()
-    print("machines.json 来源链（高 → 低优先级，同名机器高优先级覆盖）:")
+    print("machines.json source chain (high -> low priority; same-name machines are")
+    print("overridden by higher-priority sources):")
     raw_total = 0
     for i, info in enumerate(infos, 1):
         if not info.exists:
-            state = "- 不存在"
+            state = "- missing"
         elif info.error:
-            state = f"✗ 读取失败: {info.error}"
+            state = f"x read failed: {info.error}"
         else:
-            state = f"✓ {info.machine_count} 台"
+            state = f"ok, {info.machine_count} machines"
             raw_total += info.machine_count
         print(f"  [{i}] {info.label:<22} {info.path}  {state}")
     merged = load_machines()
-    print(f"合计 {len(merged)} 台（各来源原始共 {raw_total} 台，同名覆盖后 {len(merged)} 台）")
+    print(f"{len(merged)} machines total ({raw_total} across all sources before same-name overrides)")
     return 0
 
 
@@ -160,10 +166,10 @@ def cmd_setup(ns) -> int:
     elif ns.host:
         hosts = [ns.host]
     else:
-        raise SystemExit("[setup] 需要指定 host 或 --all")
+        raise SystemExit("[setup] specify a host or --all")
     results = []
     if len(hosts) == 1:
-        print(f"[setup] {hosts[0]} 初始化中...", file=sys.stderr)
+        print(f"[setup] provisioning {hosts[0]} ...", file=sys.stderr)
         results.append(setup_machine(hosts[0], force=ns.force))
     else:
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -173,17 +179,17 @@ def cmd_setup(ns) -> int:
                 r = f.result()
                 results.append(r)
                 print(f"[setup] {r.host}: {'ok' if r.ok else 'FAIL'} ({r.duration:.0f}s)", file=sys.stderr)
-    print(f"\n{'host':<24} {'结果':<6} {'python':<10} {'venv':<46} 备注")
+    print(f"\n{'host':<24} {'result':<6} {'python':<10} {'venv':<46} note")
     for r in sorted(results, key=lambda x: x.host):
         if r.ok:
             note = []
             if r.installed_standalone:
-                note.append("新装standalone")
+                note.append("standalone installed")
             if r.created_venv:
-                note.append("新建venv")
+                note.append("venv created")
             if not note:
-                note.append("已存在，仅校验/补装依赖")
-            print(f"{r.host:<24} {'ok':<6} {r.version:<10} {r.venv_python:<46} {'，'.join(note)}")
+                note.append("already present, verified/topped-up deps")
+            print(f"{r.host:<24} {'ok':<6} {r.version:<10} {r.venv_python:<46} {', '.join(note)}")
         else:
             print(f"{r.host:<24} {'FAIL':<6} {'':<10} {'':<46} {r.message[:80]}")
     return 0 if all(r.ok for r in results) else 1
@@ -196,9 +202,9 @@ def cmd_pip(ns) -> int:
         raise SystemExit(f"[pip] {e}")
     args = list(ns.pargs or []) + list(getattr(ns, "args", []) or [])
     if not args:
-        raise SystemExit("[pip] 缺少 pip 参数，例：rrun pip <host> -- list")
+        raise SystemExit("[pip] missing pip args, e.g.: rrun pip <host> -- list")
     try:
-        _check_ascii(args, "pip 参数")
+        _check_ascii(args, "pip args")
         py = venv_python_or_die(ns.host)
     except (ValueError, RuntimeError) as e:
         raise SystemExit(f"[pip] {e}")
@@ -213,7 +219,7 @@ def cmd_pip(ns) -> int:
     sys.stdout.buffer.flush()
     sys.stderr.buffer.write(err)
     sys.stderr.buffer.flush()
-    print(f"[pip] {machine.name} exit={rc} 耗时 {time.time() - t0:.1f}s", file=sys.stderr)
+    print(f"[pip] {machine.name} exit={rc} took {time.time() - t0:.1f}s", file=sys.stderr)
     return rc
 
 
@@ -223,7 +229,7 @@ def cmd_close(ns) -> int:
     elif ns.host:
         hosts = [ns.host]
     else:
-        raise SystemExit("[remote-exec] close 需要指定 host 或 --all")
+        raise SystemExit("[remote-exec] close needs a host or --all")
     rc = 0
     for h in hosts:
         try:
@@ -241,47 +247,47 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="subcmd", required=True)
 
-    ep = sub.add_parser("exec", help="在远端机器执行本地脚本/内联内容")
-    ep.add_argument("host", help="机器 name/ip/hostname（见 machines 子命令）")
-    ep.add_argument("script", nargs="?", help="本地脚本路径（.py/.ps1/.sh，UTF-8）")
+    ep = sub.add_parser("exec", help="execute a local script / inline content on a remote machine")
+    ep.add_argument("host", help="machine name/ip/hostname (see the machines subcommand)")
+    ep.add_argument("script", nargs="?", help="local script path (.py/.ps1/.sh, UTF-8)")
     ep.add_argument("--lang", choices=["bash", "powershell", "python"],
-                    help="远端解释语言（缺省：按扩展名，否则按机器 OS）")
-    ep.add_argument("-c", "--content", help="内联脚本内容（自动落盘 ~/.rrun/drops/ 留档）")
+                    help="remote interpreter language (default: by extension, else by remote OS)")
+    ep.add_argument("-c", "--content", help="inline script content (archived to ~/.rrun/drops/)")
     ep.add_argument("args", nargs="*",
-                    help="脚本参数（仅 ASCII；建议用 -- 与选项分隔，选项可放任意位置）")
-    ep.add_argument("--workdir", help="远端工作目录（bash/powershell 支持）")
+                    help="script arguments (ASCII only; use -- to separate from options)")
+    ep.add_argument("--workdir", help="remote working directory (bash/powershell only)")
     ep.add_argument("--env", action="append", metavar="KEY=VAL",
-                    help="远端环境变量（可多次；仅 ASCII）")
-    ep.add_argument("--timeout", type=float, help="本地超时秒数（超时 exit=124）")
-    ep.add_argument("--python", dest="python", help="远端 python 路径（跳过自动探测）")
-    ep.add_argument("--no-utf8", action="store_true", help="远端 python 不加 -X utf8")
-    ep.add_argument("--no-mux", action="store_true", help="禁用 ssh ControlMaster 复用")
-    ep.add_argument("-q", "--quiet", action="store_true", help="不打印 [remote-exec] 信息行")
+                    help="remote environment variable (repeatable; ASCII only)")
+    ep.add_argument("--timeout", type=float, help="local timeout in seconds (exit=124 on expiry)")
+    ep.add_argument("--python", dest="python", help="remote python path (skips auto-detection)")
+    ep.add_argument("--no-utf8", action="store_true", help="do not pass -X utf8 to remote python")
+    ep.add_argument("--no-mux", action="store_true", help="disable ssh ControlMaster multiplexing")
+    ep.add_argument("-q", "--quiet", action="store_true", help="suppress [remote-exec] info lines")
     ep.set_defaults(func=cmd_exec)
 
-    mp = sub.add_parser("machines", help="列出全部来源合并后的机器（脱敏，含来源）")
+    mp = sub.add_parser("machines", help="list machines merged from all sources (redacted, with source)")
     mp.add_argument("--json", action="store_true")
     mp.set_defaults(func=cmd_machines)
 
-    cf = sub.add_parser("config", help="查看 machines.json 来源链解析（哪些文件生效、各贡献几台）")
+    cf = sub.add_parser("config", help="show the machines.json source chain (which files apply, how many machines each)")
     cf.set_defaults(func=cmd_config)
 
-    sp = sub.add_parser("setup", help="初始化远端统一 python 环境（3.12 venv + 阿里云源）")
-    sp.add_argument("host", nargs="?", help="机器 name/ip；--all 表示全部")
-    sp.add_argument("--all", action="store_true", help="对 machines.json 所有机器执行")
-    sp.add_argument("--force", action="store_true", help="重建 venv（不动已装的 python 本体）")
-    sp.add_argument("--jobs", type=int, default=6, help="--all 时的并发数（默认 6）")
+    sp = sub.add_parser("setup", help="provision the unified remote python environment (3.12 venv)")
+    sp.add_argument("host", nargs="?", help="machine name/ip; use --all for every machine")
+    sp.add_argument("--all", action="store_true", help="run against all machines in machines.json")
+    sp.add_argument("--force", action="store_true", help="recreate the venv (keeps the python base)")
+    sp.add_argument("--jobs", type=int, default=6, help="concurrency for --all (default 6)")
     sp.set_defaults(func=cmd_setup)
 
-    pp = sub.add_parser("pip", help="在远端统一 venv 中执行 pip（ad-hoc 装包）")
-    pp.add_argument("host", help="机器 name/ip")
-    pp.add_argument("pargs", nargs="*", help="pip 参数；含 - 开头选项时放 -- 之后")
-    pp.add_argument("--timeout", type=float, default=300.0, help="本地超时秒数（默认 300）")
+    pp = sub.add_parser("pip", help="run pip inside the remote unified venv (ad-hoc installs)")
+    pp.add_argument("host", help="machine name/ip")
+    pp.add_argument("pargs", nargs="*", help="pip arguments; put options starting with - after --")
+    pp.add_argument("--timeout", type=float, default=300.0, help="local timeout in seconds (default 300)")
     pp.set_defaults(func=cmd_pip)
 
-    cp = sub.add_parser("close", help="关闭 ssh ControlMaster 复用连接")
-    cp.add_argument("host", nargs="?", help="机器 name/ip；省略时需 --all")
-    cp.add_argument("--all", action="store_true", help="关闭所有机器的复用连接")
+    cp = sub.add_parser("close", help="close ssh ControlMaster multiplexed connections")
+    cp.add_argument("host", nargs="?", help="machine name/ip; omit with --all")
+    cp.add_argument("--all", action="store_true", help="close connections for all machines")
     cp.set_defaults(func=cmd_close)
 
     # argparse 对 -- 的处理与子解析器/位置参数组合有 quirk，手动切分更可靠：

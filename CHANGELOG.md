@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-09-22
+
+### Changed
+
+- All user-facing CLI messages — `--help` text, error messages, status lines — are now
+  English, matching the English-first docs. Internal code comments remain in Chinese for now.
+
 ## [0.1.1] - 2026-09-22
 
 ### Changed
@@ -38,5 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unified remote Python 3.12 venv provisioning (python-build-standalone streamed over ssh stdin).
 - Zero runtime dependencies; dual CLI entry points `rrun` and `remote-machine`.
 
+[0.1.2]: https://github.com/waqiju/rrun/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/waqiju/rrun/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/waqiju/rrun/releases/tag/v0.1.0

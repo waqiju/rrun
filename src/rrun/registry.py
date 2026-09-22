@@ -158,6 +158,6 @@ def resolve_machine(host: str, path: "str | os.PathLike | None" = None) -> Machi
     for m in machines:
         if host and host in (m.name, m.ip, m.hostname):
             return m
-    available = ", ".join(f"{m.name}({m.ip})" for m in machines) or "<空>"
-    sources = ", ".join(str(p) for _lbl, p in candidate_sources() if p.is_file()) or "<无可用来源>"
-    raise KeyError(f"机器 [{host}] 未找到。已扫描来源: {sources}。可用: {available}")
+    available = ", ".join(f"{m.name}({m.ip})" for m in machines) or "<none>"
+    sources = ", ".join(str(p) for _lbl, p in candidate_sources() if p.is_file()) or "<no sources available>"
+    raise KeyError(f"machine [{host}] not found. Scanned sources: {sources}. Available: {available}")

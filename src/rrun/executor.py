@@ -113,7 +113,7 @@ class ExecResult:
 def _check_ascii(values, what: str) -> None:
     for v in values:
         if not all(ord(c) < 128 for c in v):
-            raise ValueError(f"{what} 含非 ASCII：{v!r}；中文/特殊字符请写进脚本内容或 JSON 文件，不要走命令行")
+            raise ValueError(f"{what} must be ASCII-only, got: {v!r}; put CJK/special characters in the script content or a JSON file, not on the command line")
 
 
 def _ps_quote(s: str) -> str:
@@ -123,7 +123,7 @@ def _ps_quote(s: str) -> str:
 
 def build_ps_wrapper(code: str, args=(), workdir: str = "", env: "dict | None" = None) -> bytes:
     """把 PowerShell 脚本编码为单行纯 ASCII wrapper（-Command - 按行执行，禁止多行）。"""
-    _check_ascii(args, "参数")
+    _check_ascii(args, "arguments")
     parts = [
         "[Console]::OutputEncoding=[Text.Encoding]::UTF8",
         "$OutputEncoding=[Text.Encoding]::UTF8",
@@ -157,7 +157,7 @@ def _posix_prefix(workdir: str = "", env: "dict | None" = None) -> str:
 
 
 def build_bash_command(args=(), workdir: str = "", env: "dict | None" = None) -> str:
-    _check_ascii(args, "参数")
+    _check_ascii(args, "arguments")
     cmd = _posix_prefix(workdir, env) + "bash -s"
     if args:
         cmd += " -- " + " ".join(shlex.quote(a) for a in args)
@@ -169,7 +169,7 @@ def _ssh_run(machine: Machine, remote_cmd: str, stdin: bytes, timeout: "float | 
     """返回 (exit_code, stdout, stderr, timed_out)。exit 255 即传输层错误。"""
     sshpass = shutil.which("sshpass")
     if not sshpass:
-        raise RuntimeError("本机缺少 sshpass（sudo apt install sshpass）")
+        raise RuntimeError("sshpass not found on this machine (install: sudo apt install sshpass / brew install hudochenkov/sshpass/sshpass)")
     if mux:
         CONTROL_PATH_DIR.mkdir(mode=0o700, exist_ok=True)
     args = [sshpass, "-p", machine.password, "ssh", *SSH_BASE_OPTS]
@@ -181,7 +181,7 @@ def _ssh_run(machine: Machine, remote_cmd: str, stdin: bytes, timeout: "float | 
                            timeout=timeout if timeout and timeout > 0 else None)
         return p.returncode, p.stdout, p.stderr, False
     except subprocess.TimeoutExpired as e:
-        return EXIT_TIMEOUT, e.stdout or b"", (e.stderr or b"") + f"\n[remote-exec] 本地超时 {timeout}s\n".encode(), True
+        return EXIT_TIMEOUT, e.stdout or b"", (e.stderr or b"") + f"\n[remote-exec] local timeout {timeout}s\n".encode(), True
 
 
 # 注意：代码内不得出现任何引号（bash 探测用单引号包裹此代码；chr(46)='.'）
@@ -259,8 +259,8 @@ def detect_remote_python(machine: Machine, override: str = "", mux: bool = True)
         found = probe_python(machine, candidates, mux)
         if not found:
             raise RuntimeError(
-                f"[{machine.name}] 未找到 python {REQUIRED_PY_MAJOR_MINOR[0]}.{REQUIRED_PY_MAJOR_MINOR[1]}"
-                f"（基线版本已锁定）。请先初始化统一环境：rrun setup {machine.name}"
+                f"[{machine.name}] no python {REQUIRED_PY_MAJOR_MINOR[0]}.{REQUIRED_PY_MAJOR_MINOR[1]}"
+                f" found (baseline is pinned). Provision first: rrun setup {machine.name}"
             )
         result = found
     _python_cache[key] = result
@@ -278,9 +278,9 @@ def run(host: str, lang: str = "", file: str = "", content: str = "", args=(),
     """
     machine = resolve_machine(host)
     if file and content:
-        raise ValueError("file 与 content 只能二选一")
+        raise ValueError("pass either file or content, not both")
     if not file and not content:
-        raise ValueError("必须提供 file 或 content")
+        raise ValueError("file or content is required")
 
     if file:
         script_path = str(Path(file).resolve())
@@ -293,8 +293,8 @@ def run(host: str, lang: str = "", file: str = "", content: str = "", args=(),
     if not lang:
         lang = EXT_TO_LANG.get(suffix, machine.default_lang)
     if lang not in LANGS:
-        raise ValueError(f"不支持的语言: {lang}（可选 {LANGS}）")
-    _check_ascii(args, "参数")
+        raise ValueError(f"unsupported language: {lang} (choose from {LANGS})")
+    _check_ascii(args, "arguments")
     _check_ascii([x for kv in (env or {}).items() for x in kv], "env")
 
     t0 = time.time()
@@ -313,7 +313,7 @@ def run(host: str, lang: str = "", file: str = "", content: str = "", args=(),
             py_cmd += " " + " ".join(shlex.quote(a) for a in args)
         if env or workdir:
             if machine.is_windows:
-                raise ValueError("Windows + python 暂不支持 workdir/env，请在脚本内 os.chdir/os.environ 处理")
+                raise ValueError("workdir/env are not supported for Windows+python yet; use os.chdir/os.environ inside the script")
             remote_cmd = _posix_prefix(workdir, env) + py_cmd
         else:
             remote_cmd = py_cmd

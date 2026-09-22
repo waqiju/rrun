@@ -103,7 +103,7 @@ def _ensure_local_tarball(os_name: str, arch: str) -> Path:
         return path
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     url = PBS_DOWNLOAD_BASE + name
-    print(f"[setup] 本机缓存缺失，下载 {url} ...", file=sys.stderr)
+    print(f"[setup] local cache miss, downloading {url} ...", file=sys.stderr)
     tmp = path.with_suffix(".part")
     urllib.request.urlretrieve(url, tmp)  # noqa: S310 - 固定官方源
     tmp.rename(path)
@@ -128,7 +128,7 @@ def _install_standalone(machine: Machine, mux: bool, timeout: float) -> str:
         arch = out.decode("utf-8", "replace").strip()
         os_name = "Mac"
         if (os_name, arch) not in PBS_ASSETS:
-            raise RuntimeError(f"[{machine.name}] 暂不支持的架构: {arch}")
+            raise RuntimeError(f"[{machine.name}] unsupported architecture: {arch}")
         extract_cmd = (
             'tools="$HOME/.remote-machine"; mkdir -p "$tools" '
             '&& rm -rf "$tools/python312" '
@@ -137,15 +137,15 @@ def _install_standalone(machine: Machine, mux: bool, timeout: float) -> str:
         )
         base_py = BASE_PY_POSIX
     tarball = _ensure_local_tarball(os_name, arch)
-    print(f"[setup] [{machine.name}] 推送 standalone python ({tarball.name}, "
+    print(f"[setup] [{machine.name}] streaming standalone python ({tarball.name}, "
           f"{tarball.stat().st_size // 1024 // 1024}MB) ...", file=sys.stderr)
     rc, _, err, timed_out = _ssh_run(machine, extract_cmd, tarball.read_bytes(), timeout, mux)
     if rc != 0:
-        raise RuntimeError(f"[{machine.name}] standalone 推送/解压失败(exit={rc}): "
+        raise RuntimeError(f"[{machine.name}] standalone push/extract failed (exit={rc}): "
                            f"{err.decode('utf-8', 'replace')[:300]}")
     ver = probe_python_version(machine, base_py, mux)
     if not ver:
-        raise RuntimeError(f"[{machine.name}] standalone 解压后验证失败: {base_py}")
+        raise RuntimeError(f"[{machine.name}] standalone python failed verification after extraction: {base_py}")
     return base_py
 
 
@@ -230,11 +230,11 @@ def setup_machine(host: str, force: bool = False, mux: bool = True,
             rc, out, err, _ = _ssh_run(machine, "bash -s", payload, timeout, mux)
         if rc != 0:
             tail = (err or out).decode("utf-8", "replace").strip()[-400:]
-            raise RuntimeError(f"setup 脚本失败(exit={rc}): {tail}")
+            raise RuntimeError(f"setup script failed (exit={rc}): {tail}")
 
         final = probe_python(machine, [venv_py], mux)
         if not final:
-            raise RuntimeError("setup 完成但 venv python 探测失败")
+            raise RuntimeError("setup finished but the venv python probe failed")
         result.venv_python, result.version = final
         result.packages = reqs
         result.ok = True
@@ -272,5 +272,5 @@ def venv_python_or_die(host: str, mux: bool = True) -> str:
     venv_py = VENV_PY_WIN if machine.is_windows else VENV_PY_POSIX
     hit = probe_python(machine, [venv_py], mux)
     if not hit:
-        raise RuntimeError(f"[{machine.name}] 统一 venv 未初始化，请先：rrun setup {machine.name}")
+        raise RuntimeError(f"[{machine.name}] unified venv not provisioned yet; run first: rrun setup {machine.name}")
     return hit[0]
