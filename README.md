@@ -25,9 +25,13 @@ See [docs/remote-exec-conventions.md](docs/remote-exec-conventions.md) (中文) 
 ## Install
 
 ```bash
-pipx install rrun        # recommended: isolated global CLI
-# or: pip install rrun
+pipx install rrun-cli    # recommended: isolated global CLI (provides the `rrun` command)
+# or: pip install rrun-cli
 ```
+
+> The PyPI distribution is named `rrun-cli` (plain `rrun` is on PyPI's prohibited-name list
+> as it's confusable with `run`), but the installed command is `rrun` — plus the legacy alias
+> `remote-machine`.
 
 Both `rrun` and the legacy alias `remote-machine` are installed.
 
@@ -96,7 +100,7 @@ rrun 解决「从 POSIX shell 在远程机器（尤其 Windows）执行脚本」
 脚本内容一律走 **stdin 管道**（UTF-8，中文随便用），命令行参数只放行 ASCII；
 PowerShell 载荷编码为单行纯 ASCII wrapper，退出码原样透传。
 
-- 安装：`pipx install rrun`（控制端需 `ssh` + `sshpass`）
+- 安装：`pipx install rrun-cli`（控制端需 `ssh` + `sshpass`；装好后命令是 `rrun`）
 - 机器清单 `machines.json` 来源链：`$RRUN_CONFIG` → `./machines.json` → `~/.rrun/machines.json` → `~/.rrun/machines.d/*.json` → 旧位置兼容
 - 远程 python 基线锁 3.12，`rrun setup <host>` 一键幂等初始化统一 venv（standalone 基座经 ssh 推流安装，远端无需访问 GitHub，pip 走阿里云镜像）
 - 更多踩坑约定见 [docs/remote-exec-conventions.md](docs/remote-exec-conventions.md)

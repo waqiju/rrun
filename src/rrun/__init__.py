@@ -10,7 +10,7 @@
 try:
     from importlib.metadata import version as _pkg_version
 
-    __version__ = _pkg_version("rrun")
+    __version__ = _pkg_version("rrun-cli")
 except Exception:  # noqa: BLE001 - 未安装（源码直跑）时回退
     __version__ = "0.1.0"
 
