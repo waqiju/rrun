@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "rrun-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Run local scripts on remote machines over SSH via stdin pipes — no escaping/encoding hell. Supports python/powershell/bash, with a unified remote Python 3.12 venv provisioner."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.10"
 authors = [{ name = "waqiju" }]
 keywords = ["ssh", "remote-exec", "powershell", "windows", "ops", "automation"]
@@ -16,7 +16,6 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
@@ -29,6 +28,8 @@ dependencies = []
 Homepage = "https://github.com/waqiju/rrun"
 Repository = "https://github.com/waqiju/rrun"
 Issues = "https://github.com/waqiju/rrun/issues"
+Changelog = "https://github.com/waqiju/rrun/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/waqiju/rrun/blob/main/docs/remote-exec-conventions.md"
 
 [project.scripts]
 rrun = "rrun.__main__:main"
