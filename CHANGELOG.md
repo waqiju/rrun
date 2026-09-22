@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-09-22
+
+### Added
+
+- **`rrun config init`**: scaffold `~/.rrun/machines.json` from the bundled template —
+  creates the directory (mode `700`) and file (mode `600`), refuses to overwrite an
+  existing file unless `--force`. Onboarding no longer requires browsing the repo for
+  the template or memorizing paths.
+- **`rrun config add`**: append one machine to the user inventory. With no flags it runs
+  an interactive wizard (password via `getpass`, invalid input re-prompts, confirmation
+  before writing); with `--name/--ip/--user` (plus optional `--os/--port/--password/
+  --identity-file/--hostname/--python/--description`) it appends non-interactively.
+  Duplicate names are rejected, a corrupt target file is never clobbered, and a warning
+  is printed when a higher-priority source shadows the new entry.
+- **`rrun config edit`**: open the user inventory in `$VISUAL`/`$EDITOR` (fallback:
+  `notepad`/`vi`), bootstrapping it from the template first if missing (`crontab -e`
+  style); validates the JSON after the editor exits.
+- **Empty-inventory hints**: `rrun machines`, `rrun config` and machine-resolution errors
+  now point to `rrun config init` when no machines are configured at all.
+
+### Changed
+
+- `machines.template.json` moved into the package (`src/rrun/`) as package data, so
+  `rrun config init` works offline and the template is version-locked to the installed
+  release. Bare `rrun config` (source-chain diagnosis) is unchanged.
+
 ## [0.2.2] - 2026-09-22
 
 ### Added

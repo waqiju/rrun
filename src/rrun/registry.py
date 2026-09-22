@@ -23,6 +23,10 @@ from pathlib import Path
 ENV_MACHINES_JSON = "RRUN_CONFIG"
 ENV_MACHINES_JSON_LEGACY = "REMOTE_MACHINE_CONFIG"
 
+# 空清单引导：首次安装（无任何来源）时指给用户的下一步。CLI 多处复用。
+EMPTY_INVENTORY_HINT = ("no machines configured yet — run 'rrun config init' "
+                        "to create ~/.rrun/machines.json from a bundled template")
+
 _KNOWN_KEYS = {"name", "ip", "user", "password", "os", "hostname", "description", "python", "port", "identity_file"}
 
 
@@ -164,4 +168,7 @@ def resolve_machine(host: str, path: "str | os.PathLike | None" = None) -> Machi
             return m
     available = ", ".join(f"{m.name}({m.ip})" for m in machines) or "<none>"
     sources = ", ".join(str(p) for _lbl, p in candidate_sources() if p.is_file()) or "<no sources available>"
-    raise KeyError(f"machine [{host}] not found. Scanned sources: {sources}. Available: {available}")
+    msg = f"machine [{host}] not found. Scanned sources: {sources}. Available: {available}"
+    if not machines:
+        msg += f" Hint: {EMPTY_INVENTORY_HINT}"
+    raise KeyError(msg)

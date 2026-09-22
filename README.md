@@ -36,19 +36,13 @@ brew install hudochenkov/sshpass/sshpass        # macOS (sshpass is not in homeb
 
 ## Quickstart
 
-Create `~/.rrun/machines.json` (full format in [Configuration](#configuration-machinesjson)):
-
-```json
-{
-  "machines": [
-    { "name": "my-win-box", "ip": "192.168.1.10", "os": "Windows", "user": "admin", "password": "secret" }
-  ]
-}
-```
-
-Then:
+Scaffold the machine inventory, fill in your machines, verify:
 
 ```bash
+rrun config init                         # create ~/.rrun/machines.json from the bundled template (mode 600)
+rrun config edit                         # open it in $EDITOR — replace the my-* example entries
+# or: rrun config add                    # interactive wizard that appends one machine
+
 rrun machines                            # verify the inventory is picked up (redacted)
 printf 'Write-Output "hello 中文"\n' > demo.ps1
 rrun exec my-win-box demo.ps1            # powershell, inferred from .ps1
@@ -72,7 +66,7 @@ The full set of hard-won conventions and internals: [docs/remote-exec-convention
 |---|---|
 | `rrun exec <host> <script\|-c ...>` | Execute a local script / inline content remotely |
 | `rrun machines [--json]` | List merged machines (redacted, with source) |
-| `rrun config` | Diagnose the machines.json source chain |
+| `rrun config [init\|add\|edit]` | Manage the user inventory (`init` scaffolds from the bundled template, `add` appends via wizard/flags, `edit` opens `$EDITOR`); bare `config` diagnoses the source chain |
 | `rrun setup <host\|--all> [--force]` | Provision the unified remote Python 3.12 venv (idempotent) |
 | `rrun pip <host> -- list` | Run pip inside the remote unified venv |
 | `rrun doctor <host\|--all>` | Health-check ssh + auth + remote python (`--all` opens real connections to every machine) |
@@ -90,7 +84,7 @@ Useful `exec` flags: `--lang bash|powershell|python`, `--workdir`/`--env K=V` (n
 
 ## Configuration: machines.json
 
-Credentials live in local `machines.json` files — see [machines.template.json](machines.template.json):
+Credentials live in local `machines.json` files. `rrun config init` writes the bundled template to `~/.rrun/machines.json` (also browsable at [src/rrun/machines.template.json](src/rrun/machines.template.json)):
 
 ```json
 {
@@ -129,7 +123,7 @@ If none match, run `rrun setup <host>`. It is idempotent and non-destructive: if
 
 ## Security
 
-- `machines.json` stores **plaintext passwords**. Keep it local, `chmod 600`, never commit it — or leave `password` empty and use key-based auth instead.
+- `machines.json` stores **plaintext passwords**. Keep it local and never commit it — `rrun config init`/`add` already write the user inventory with mode `600` — or leave `password` empty and use key-based auth instead.
 - Key-based auth runs ssh with `BatchMode=yes` (no interactive prompts; a missing/unauthorized key fails fast instead of eating the script from stdin).
 - The audit log never records passwords, and `--env` values are logged as keys only.
 

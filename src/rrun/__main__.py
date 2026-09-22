@@ -14,6 +14,7 @@ Usage:
     rrun doctor <host|--all>            # health-check ssh + auth + remote python
     rrun machines                       # list machines (redacted, with source)
     rrun config                         # diagnose the machines.json source chain
+    rrun config init|add|edit           # scaffold / append / edit ~/.rrun/machines.json
     rrun close [<host>|--all]           # close ssh multiplexed connections
 
 Conventions:
@@ -42,9 +43,10 @@ import time
 from pathlib import Path
 
 from . import __version__
+from .config_cmd import cmd_config_add, cmd_config_chain, cmd_config_edit, cmd_config_init
 from .doctor import check_machine
 from .executor import RRUN_HOME, _check_ascii, _ssh_run, close_mux, run
-from .registry import load_machines, resolve_machine, scan_sources
+from .registry import EMPTY_INVENTORY_HINT, load_machines, resolve_machine
 from .setup import setup_machine, venv_python_or_die
 
 INLINE_DROP_DIR = RRUN_HOME / "drops"
@@ -138,29 +140,12 @@ def cmd_machines(ns) -> int:
     machines = load_machines()
     if ns.json:
         print(json.dumps([m.public_dict() for m in machines], ensure_ascii=False, indent=2))
-        return 0
-    for m in machines:
-        desc = f"  # {m.description}" if m.description else ""
-        print(f"{m.name:<24} {m.ip:<16} {m.os:<8} {m.user:<12} {m.default_lang:<11} {_short_source(m.source)}{desc}")
-    return 0
-
-
-def cmd_config(ns) -> int:
-    infos = scan_sources()
-    print("machines.json source chain (high -> low priority; same-name machines are")
-    print("overridden by higher-priority sources):")
-    raw_total = 0
-    for i, info in enumerate(infos, 1):
-        if not info.exists:
-            state = "- missing"
-        elif info.error:
-            state = f"x read failed: {info.error}"
-        else:
-            state = f"ok, {info.machine_count} machines"
-            raw_total += info.machine_count
-        print(f"  [{i}] {info.label:<22} {info.path}  {state}")
-    merged = load_machines()
-    print(f"{len(merged)} machines total ({raw_total} across all sources before same-name overrides)")
+    else:
+        for m in machines:
+            desc = f"  # {m.description}" if m.description else ""
+            print(f"{m.name:<24} {m.ip:<16} {m.os:<8} {m.user:<12} {m.default_lang:<11} {_short_source(m.source)}{desc}")
+    if not machines:
+        print(f"[machines] {EMPTY_INVENTORY_HINT}", file=sys.stderr)
     return 0
 
 
@@ -303,8 +288,34 @@ def main() -> None:
     mp.add_argument("--json", action="store_true")
     mp.set_defaults(func=cmd_machines)
 
-    cf = sub.add_parser("config", help="show the machines.json source chain (which files apply, how many machines each)")
-    cf.set_defaults(func=cmd_config)
+    cf = sub.add_parser("config", help="manage the machine inventory (init/add/edit); "
+                                       "bare 'config' diagnoses the machines.json source chain")
+    cf.set_defaults(func=cmd_config_chain)
+    cfsub = cf.add_subparsers(dest="config_cmd")
+
+    ci = cfsub.add_parser("init", help="create ~/.rrun/machines.json from the bundled template (mode 600)")
+    ci.add_argument("--force", action="store_true", help="overwrite an existing inventory file")
+    ci.set_defaults(func=cmd_config_init)
+
+    ca = cfsub.add_parser("add", help="append a machine to ~/.rrun/machines.json "
+                                      "(interactive wizard when neither --name nor --ip is given)")
+    ca.add_argument("--name", help="unique machine name (no spaces)")
+    ca.add_argument("--ip", help="ip address of the machine")
+    ca.add_argument("--hostname", help="optional hostname (also resolvable)")
+    ca.add_argument("--os", choices=["Windows", "Mac", "Linux"], help="remote OS (default: Windows)")
+    ca.add_argument("--user", help="ssh login user")
+    ca.add_argument("--password", help="plaintext password (visible in shell history — prefer the wizard); "
+                                       "omit for key-based auth")
+    ca.add_argument("--identity-file", dest="identity_file", help="ssh private key path (key auth only)")
+    ca.add_argument("--port", type=int, help="ssh port (default: 22)")
+    ca.add_argument("--python", dest="python", help="explicit remote python path (skips auto-detection)")
+    ca.add_argument("--description", help="free-form description")
+    ca.add_argument("-i", "--interactive", action="store_true", help="force the interactive wizard")
+    ca.set_defaults(func=cmd_config_add)
+
+    ce = cfsub.add_parser("edit", help="open ~/.rrun/machines.json in $EDITOR "
+                                       "(creates it from the template first if missing)")
+    ce.set_defaults(func=cmd_config_edit)
 
     sp = sub.add_parser("setup", help="provision the unified remote python environment (3.12 venv)")
     sp.add_argument("host", nargs="?", help="machine name/ip; use --all for every machine")

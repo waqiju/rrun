@@ -37,19 +37,13 @@ brew install hudochenkov/sshpass/sshpass        # macOS（sshpass 不在 homebre
 
 ## 快速上手
 
-创建 `~/.rrun/machines.json`（完整格式见 [配置](#配置machinesjson)）：
-
-```json
-{
-  "machines": [
-    { "name": "my-win-box", "ip": "192.168.1.10", "os": "Windows", "user": "admin", "password": "secret" }
-  ]
-}
-```
-
-然后：
+生成机器清单、填入你的机器、验证：
 
 ```bash
+rrun config init                         # 用内置模板创建 ~/.rrun/machines.json（权限 600）
+rrun config edit                         # 用 $EDITOR 打开——把 my-* 示例条目换成你的机器
+# 或： rrun config add                   # 交互式向导，追加一台机器
+
 rrun machines                            # 确认机器清单已生效（脱敏显示）
 printf 'Write-Output "hello 中文"\n' > demo.ps1
 rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
@@ -76,7 +70,7 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
 |---|---|
 | `rrun exec <host> <script\|-c ...>` | 在远端执行本地脚本 / 内联内容 |
 | `rrun machines [--json]` | 列出合并后的机器（脱敏，含来源） |
-| `rrun config` | 诊断 machines.json 来源链 |
+| `rrun config [init\|add\|edit]` | 管理用户级机器清单（`init` 按内置模板生成、`add` 以向导/旗帜追加、`edit` 用 `$EDITOR` 打开）；裸 `config` 诊断来源链 |
 | `rrun setup <host\|--all> [--force]` | 初始化远端统一 Python 3.12 venv（幂等） |
 | `rrun pip <host> -- list` | 在远端统一 venv 中执行 pip |
 | `rrun doctor <host\|--all>` | 健康检查：ssh + 认证 + 远端 python（`--all` 会向所有机器发起真实连接） |
@@ -95,7 +89,7 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
 
 ## 配置：machines.json
 
-凭据放在本地 `machines.json` 文件里——见 [machines.template.json](machines.template.json)：
+凭据放在本地 `machines.json` 文件里。`rrun config init` 会把内置模板写入 `~/.rrun/machines.json`（模板也可在 [src/rrun/machines.template.json](src/rrun/machines.template.json) 浏览）：
 
 ```json
 {
@@ -144,7 +138,7 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
 
 ## 安全说明
 
-- `machines.json` 存的是**明文密码**：保持本地存放、`chmod 600`、绝不提交入库。
+- `machines.json` 存的是**明文密码**：保持本地存放、绝不提交入库（`rrun config init`/`add` 写用户清单时已自带 `600` 权限）；或把 `password` 留空改用密钥认证。
 - rrun 经 `sshpass` 做密码认证；**也支持密钥认证**（password 留空即可，详见上文配置节）。
 - 密钥认证以 `BatchMode=yes` 运行 ssh（无交互提示；密钥缺失/未授权时快速失败，不会把 stdin 里的脚本吃掉）。
 - 审计日志绝不记录密码；`--env` 的值只以 key 的形式记录。
