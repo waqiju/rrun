@@ -245,3 +245,72 @@ class TestEmptyStateHints:
     def test_resolve_machine_hint(self, isolated):
         with pytest.raises(KeyError, match="rrun config init"):
             resolve_machine("nope")
+
+
+class TestInventoryPathCollision:
+    """v0.2.3 回归：cwd == ~/.rrun 或 $RRUN_CONFIG 指向用户清单时，来源链去重会丢弃
+    user 标签——user_inventory_path() 不得受此影响。"""
+
+    def test_cwd_inside_rrun_home(self, isolated, monkeypatch):
+        cmd_config_init(_ns(force=False))
+        monkeypatch.chdir(isolated / "home" / ".rrun")
+        assert cmd_config_add(_flag_ns(name="x", ip="1.1.1.1", user="u")) == 0
+        assert resolve_machine("x").ip == "1.1.1.1"
+        assert cmd_config_init(_ns(force=False)) == 1  # 仍能正确识别已存在
+
+    def test_env_points_at_user_file(self, isolated, monkeypatch):
+        cmd_config_init(_ns(force=False))
+        monkeypatch.setenv("RRUN_CONFIG", str(user_inventory_path()))
+        assert cmd_config_add(_flag_ns(name="x", ip="1.1.1.1", user="u")) == 0
+        assert resolve_machine("x").ip == "1.1.1.1"
+
+
+class TestMachinesD:
+    def test_init_creates_dir_and_readme(self, isolated):
+        cmd_config_init(_ns(force=False))
+        d = user_inventory_path().parent / "machines.d"
+        readme = d / "README.md"
+        assert readme.is_file() and "ln -s" in readme.read_text(encoding="utf-8")
+        if os.name != "nt":
+            assert stat.S_IMODE(d.stat().st_mode) == 0o700
+
+    def test_readme_not_treated_as_inventory(self, isolated):
+        cmd_config_init(_ns(force=False))
+        assert all("README" not in m.name for m in load_machines())
+
+    def test_ensure_machines_d_idempotent(self, isolated):
+        cmd_config_init(_ns(force=False))
+        readme = user_inventory_path().parent / "machines.d" / "README.md"
+        readme.write_text("user customized", encoding="utf-8")
+        cmd_config_init(_ns(force=True))
+        assert readme.read_text(encoding="utf-8") == "user customized"  # 不覆盖用户改动
+
+    def test_chain_shows_empty_dir(self, isolated, capsys):
+        cmd_config_init(_ns(force=False))
+        capsys.readouterr()
+        cmd_config_chain(_ns())
+        assert "no *.json files" in capsys.readouterr().out
+
+    def test_chain_lists_json_files_when_present(self, isolated, capsys):
+        cmd_config_init(_ns(force=False))
+        d = user_inventory_path().parent / "machines.d"
+        (d / "10-x.json").write_text(
+            json.dumps({"machines": [{"name": "deep", "ip": "1.1.1.1", "user": "u"}]}),
+            encoding="utf-8")
+        capsys.readouterr()
+        cmd_config_chain(_ns())
+        out = capsys.readouterr().out
+        assert "10-x.json" in out and "no *.json" not in out
+        assert "deep" in [m.name for m in load_machines()]
+
+
+class TestTemplateHint:
+    def test_hint_present_and_ignored_by_loader(self, isolated):
+        cmd_config_init(_ns(force=False))
+        assert "_hint" in _read_inventory()
+        assert load_machines()  # _hint 不影响加载
+
+    def test_hint_preserved_after_add(self, isolated):
+        cmd_config_init(_ns(force=False))
+        cmd_config_add(_flag_ns(name="z", ip="1.1.1.1", user="u"))
+        assert "_hint" in _read_inventory()

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rrun-cli"
-version = "0.2.3"
+version = "0.2.4"
 description = "Run local scripts on remote machines over SSH via stdin pipes — no escaping/encoding hell. Supports python/powershell/bash, with a unified remote Python 3.12 venv provisioner."
 readme = "README.md"
 license = "MIT"
@@ -45,7 +45,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-rrun = ["remote-requirements.txt", "machines.template.json"]
+rrun = ["remote-requirements.txt", "machines.template.json", "machines.d.README.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

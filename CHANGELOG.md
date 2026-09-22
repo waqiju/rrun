@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-09-23
+
+### Fixed
+
+- **`rrun config init/add/edit` crashed** with `RuntimeError: unreachable` when the
+  current working directory was `~/.rrun` itself (or when `$RRUN_CONFIG` pointed at the
+  user inventory): the source chain dedups identical paths by keeping the
+  higher-priority label, so the `user` entry could legitimately vanish. The user
+  inventory path is now a single-source-of-truth function in `registry` instead of a
+  label lookup on the deduped chain.
+
+### Added
+
+- **`rrun config init` also creates `~/.rrun/machines.d/`** with a bundled `README.md`
+  inside explaining the multi-inventory pattern (merge order, filename prefixes,
+  symlink recipe) — the `.d` mechanism is now discoverable without reading the docs.
+- The inventory template carries a top-level `_hint` key (ignored by the loader,
+  preserved by `config add`) pointing at `machines.d`.
+- `rrun config` shows an existing-but-empty `machines.d/` directory in the source
+  chain (`dir exists, no *.json files`).
+
 ## [0.2.3] - 2026-09-22
 
 ### Added

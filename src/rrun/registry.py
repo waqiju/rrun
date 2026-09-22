@@ -76,6 +76,15 @@ class SourceInfo:
     error: str = ""
 
 
+def user_inventory_path() -> Path:
+    """用户级主清单路径（单一真相源：candidate_sources 的 user 条目、config init/add/edit 共用）。
+
+    注意：不要从 candidate_sources() 的结果里按 label 反查这个路径——当 cwd 恰好是
+    ~/.rrun 或 $RRUN_CONFIG 指向同一文件时，去重会丢弃 user 条目（v0.2.3 的教训）。
+    """
+    return Path.home() / ".rrun" / "machines.json"
+
+
 def candidate_sources() -> "list[tuple[str, Path]]":
     """返回 (标签, 路径) 有序来源链（高→低优先级），按 resolved path 去重。"""
     cands: list[tuple[str, Path]] = []
@@ -86,12 +95,14 @@ def candidate_sources() -> "list[tuple[str, Path]]":
             label = f"${env_name}" if i == 0 else f"${env_name}[{i}]"
             cands.append((label, Path(p).expanduser()))
     cands.append(("cwd", Path.cwd() / "machines.json"))
-    rrun_home = Path.home() / ".rrun"
-    cands.append(("user", rrun_home / "machines.json"))
-    machines_d = rrun_home / "machines.d"
+    cands.append(("user", user_inventory_path()))
+    machines_d = user_inventory_path().parent / "machines.d"
     if machines_d.is_dir():
-        for p in sorted(machines_d.glob("*.json")):
-            cands.append(("user.d", p))
+        files = sorted(machines_d.glob("*.json"))
+        if files:
+            cands.extend(("user.d", p) for p in files)
+        else:
+            cands.append(("user.d", machines_d))  # 空目录也入链：让诊断能看到它存在（merge 时 is_file 跳过）
     if os.name == "nt":
         cands.append(("legacy", Path(r"C:\tools\remote-machine\machines.json")))
     else:
@@ -150,7 +161,9 @@ def scan_sources() -> "list[SourceInfo]":
     infos = []
     for label, p in candidate_sources():
         info = SourceInfo(label=label, path=p)
-        if p.is_file():
+        if p.is_dir():
+            info.exists = True  # 目录型来源（空 machines.d）：无可读机器，仅示意存在
+        elif p.is_file():
             info.exists = True
             try:
                 info.machine_count = len(_load_file(p))

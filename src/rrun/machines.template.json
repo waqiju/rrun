@@ -4,6 +4,7 @@
     "mac": { "os": "Mac" },
     "linux": { "os": "Linux" }
   },
+  "_hint": "more inventories: drop *.json into ~/.rrun/machines.d/ (see its README.md); docs: https://github.com/waqiju/rrun",
   "machines": [
     {
       "name": "my-win-box",

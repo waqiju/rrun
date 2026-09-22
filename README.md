@@ -106,7 +106,7 @@ Sources are merged by machine name, highest priority first (all optional, failur
 2. `$REMOTE_MACHINE_CONFIG` (legacy name, still honored)
 3. `./machines.json` (current working directory)
 4. `~/.rrun/machines.json`
-5. `~/.rrun/machines.d/*.json` (sorted by filename — point each inventory at its own file/symlink)
+5. `~/.rrun/machines.d/*.json` (sorted by filename — point each inventory at its own file/symlink; `rrun config init` creates this directory with a README inside)
 6. Legacy: `~/.remote-machine/machines.json` (POSIX) / `C:\tools\remote-machine\machines.json` (Windows)
 
 Per-file `defaults` sections (keyed by `os`, lowercased) are applied before merging. Inspect the chain with `rrun config`; list machines (redacted) with `rrun machines`.

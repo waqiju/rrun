@@ -114,7 +114,7 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
 2. `$REMOTE_MACHINE_CONFIG`（旧名，仍兼容）
 3. `./machines.json`（当前工作目录）
 4. `~/.rrun/machines.json`
-5. `~/.rrun/machines.d/*.json`（按文件名排序——每份清单放一个文件/软链）
+5. `~/.rrun/machines.d/*.json`（按文件名排序——每份清单放一个文件/软链；`rrun config init` 会创建该目录并内置一份 README）
 6. 旧位置兼容：`~/.remote-machine/machines.json`（POSIX）/ `C:\tools\remote-machine\machines.json`（Windows）
 
 每个文件的 `defaults` 段（按 `os` 小写为键）在 merge 前应用。用 `rrun config` 诊断来源链，

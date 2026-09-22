@@ -1,11 +1,12 @@
 """`rrun config` 子命令组：机器清单的初始化 / 追加 / 编辑 + 来源链诊断。
 
 设计要点：
-- init/add/edit 只操作「用户级主清单」（registry 来源链中的 user 位），路径从
-  candidate_sources() 派生而非写死 ~/.rrun，保证写入位置就是加载位置；
-  其他来源（env/cwd/machines.d/legacy）只读不动。
-- 模板内嵌为 package data（src/rrun/machines.template.json），离线可用、随发行版本
-  锁定；写盘即收紧权限（目录 700 / 文件 600，明文密码场景，Windows chmod 语义有限跳过）。
+- init/add/edit 只操作「用户级主清单」，路径取 registry.user_inventory_path()（单一
+  真相源）；不得在来源链上按 label 反查——cwd/env 来源与之同路径时去重会丢弃
+  user 条目。其他来源（env/cwd/machines.d/legacy）只读不动。
+- init 顺带创建 machines.d/ 并内置 README.md（.d 模式的可发现性传统：目录自带说明）。
+- 模板与 README 内嵌为 package data，离线可用、随发行版本锁定；写盘即收紧权限
+  （目录 700 / 文件 600，明文密码场景，Windows chmod 语义有限跳过）。
 - add 双模式：不给 --name/--ip → 交互向导（getpass 隐藏密码，旗帜值作预填默认）；
   给了 → 纯旗帜模式（可脚本化）；-i 强制向导。
 - edit 走 $VISUAL/$EDITOR（Windows 回退 notepad，POSIX 回退 vi），退出后校验 JSON；
@@ -24,27 +25,20 @@ from pathlib import Path
 from .registry import (
     EMPTY_INVENTORY_HINT,
     _load_file,
-    candidate_sources,
     load_machines,
     resolve_machine,
     scan_sources,
+    user_inventory_path,
 )
 
 TEMPLATE_FILE = Path(__file__).resolve().with_name("machines.template.json")
+MACHINES_D_README = Path(__file__).resolve().with_name("machines.d.README.md")
 
 _OS_ALIASES = {
     "w": "Windows", "windows": "Windows",
     "m": "Mac", "mac": "Mac", "macos": "Mac", "osx": "Mac", "darwin": "Mac",
     "l": "Linux", "linux": "Linux",
 }
-
-
-def user_inventory_path() -> Path:
-    """用户级主清单路径（从来源链派生，不写死 ~/.rrun）。"""
-    for label, p in candidate_sources():
-        if label == "user":
-            return p
-    raise RuntimeError("unreachable: candidate_sources() always includes the user source")  # pragma: no cover
 
 
 def _shorten(path: Path) -> str:
@@ -125,15 +119,30 @@ def _report_added(path: Path, name: str) -> None:
     print(f"[config] next: rrun doctor {name}   # connectivity + python check")
 
 
+def _ensure_machines_d() -> Path:
+    """创建 machines.d/ 并内置 README（幂等；README 已存在不覆盖——用户可能改过）。"""
+    d = user_inventory_path().parent / "machines.d"
+    d.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        os.chmod(d, 0o700)
+    readme = d / "README.md"
+    if not readme.exists():
+        _write_secure(readme, MACHINES_D_README.read_text(encoding="utf-8"))
+    return d
+
+
 def cmd_config_init(ns) -> int:
-    """按内嵌模板创建用户级主清单；已存在时拒绝覆盖（--force 除外）。"""
+    """按内嵌模板创建用户级主清单 + machines.d/；已存在时拒绝覆盖（--force 除外）。"""
     path = user_inventory_path()
     if path.exists() and not ns.force:
         print(f"[config] {_shorten(path)} already exists (use --force to overwrite)", file=sys.stderr)
         return 1
     _write_secure(path, TEMPLATE_FILE.read_text(encoding="utf-8"))
+    d = _ensure_machines_d()
     perms = "" if os.name == "nt" else ", mode 600"
     print(f"[config] created {_shorten(path)} from the bundled template{perms}")
+    print(f"[config] machines.d ready at {_shorten(d)}/ — drop extra *.json inventories there"
+          " (see its README.md)")
     print("[config] next: replace the my-* example entries with your machines"
           " — 'rrun config edit' or 'rrun config add'")
     print("[config] then: rrun machines   # verify the inventory is picked up (redacted)")
@@ -257,7 +266,9 @@ def cmd_config_chain(ns) -> int:
     print("overridden by higher-priority sources):")
     raw_total = 0
     for i, info in enumerate(infos, 1):
-        if not info.exists:
+        if info.path.is_dir():
+            state = "dir exists, no *.json files"
+        elif not info.exists:
             state = "- missing"
         elif info.error:
             state = f"x read failed: {info.error}"
