@@ -6,7 +6,8 @@
     2. $REMOTE_MACHINE_CONFIG（旧名，兼容）
     3. ./machines.json（当前工作目录）
     4. ~/.rrun/machines.json（用户级主清单）
-    5. 旧位置兼容：Windows C:\\tools\\remote-machine\\machines.json
+    5. ~/.rrun/machines.d/*.json（按文件名排序；推荐：多清单各放一个文件/软链）
+    6. 旧位置兼容：Windows C:\\tools\\remote-machine\\machines.json
                    POSIX   ~/.remote-machine/machines.json
 
 规则：
@@ -79,7 +80,12 @@ def candidate_sources() -> "list[tuple[str, Path]]":
             label = f"${env_name}" if i == 0 else f"${env_name}[{i}]"
             cands.append((label, Path(p).expanduser()))
     cands.append(("cwd", Path.cwd() / "machines.json"))
-    cands.append(("user", Path.home() / ".rrun" / "machines.json"))
+    rrun_home = Path.home() / ".rrun"
+    cands.append(("user", rrun_home / "machines.json"))
+    machines_d = rrun_home / "machines.d"
+    if machines_d.is_dir():
+        for p in sorted(machines_d.glob("*.json")):
+            cands.append(("user.d", p))
     if os.name == "nt":
         cands.append(("legacy", Path(r"C:\tools\remote-machine\machines.json")))
     else:

@@ -54,7 +54,8 @@ Sources are merged by machine name, highest priority first (all optional, failur
 2. `$REMOTE_MACHINE_CONFIG` (legacy name, still honored)
 3. `./machines.json` (current working directory)
 4. `~/.rrun/machines.json`
-5. Legacy: `~/.remote-machine/machines.json` (POSIX) / `C:\tools\remote-machine\machines.json` (Windows)
+5. `~/.rrun/machines.d/*.json` (sorted by filename — point each inventory at its own file/symlink)
+6. Legacy: `~/.remote-machine/machines.json` (POSIX) / `C:\tools\remote-machine\machines.json` (Windows)
 
 Per-file `defaults` sections (keyed by `os`, lowercased) are applied before merging. Inspect the chain with `rrun config`; list machines (redacted) with `rrun machines`.
 
@@ -96,7 +97,7 @@ rrun 解决「从 POSIX shell 在远程机器（尤其 Windows）执行脚本」
 PowerShell 载荷编码为单行纯 ASCII wrapper，退出码原样透传。
 
 - 安装：`pipx install rrun`（控制端需 `ssh` + `sshpass`）
-- 机器清单 `machines.json` 来源链：`$RRUN_CONFIG` → `./machines.json` → `~/.rrun/machines.json` → 旧位置兼容
+- 机器清单 `machines.json` 来源链：`$RRUN_CONFIG` → `./machines.json` → `~/.rrun/machines.json` → `~/.rrun/machines.d/*.json` → 旧位置兼容
 - 远程 python 基线锁 3.12，`rrun setup <host>` 一键幂等初始化统一 venv（standalone 基座经 ssh 推流安装，远端无需访问 GitHub，pip 走阿里云镜像）
 - 更多踩坑约定见 [docs/remote-exec-conventions.md](docs/remote-exec-conventions.md)
 
