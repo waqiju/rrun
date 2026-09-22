@@ -48,6 +48,10 @@ If all probes fail, exec refuses to install anything implicitly on the hot path 
 to run `rrun setup`. A `"python"` field in machines.json or `--python` skips probing and
 version checks entirely.
 
+`--workdir`/`--env` are **not supported on Windows+python, by design**: there is no portable
+shell-level injection point, and preamble injection was rejected — set them in the script
+(`os.chdir`/`os.environ`) instead. Full rationale: [windows-python-workdir-env.md](windows-python-workdir-env.md).
+
 ### bash payloads
 
 `bash -s -- args...`, with an optional `cd`/`env` prefix for `--workdir`/`--env`.

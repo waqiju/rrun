@@ -82,7 +82,7 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
 | `rrun doctor <host\|--all>` | 健康检查：ssh + 认证 + 远端 python（`--all` 会向所有机器发起真实连接） |
 | `rrun close [<host>\|--all]` | 关闭 ssh ControlMaster 复用连接 |
 
-常用 `exec` 选项：`--lang bash|powershell|python`、`--workdir`、`--env K=V`、`--timeout`、
+常用 `exec` 选项：`--lang bash|powershell|python`、`--workdir`/`--env K=V`（Windows+python 不支持）、`--timeout`、
 `--python <path>`（跳过探测）、`--no-mux`、`-q`。
 
 ### 退出码

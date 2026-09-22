@@ -78,7 +78,7 @@ The full set of hard-won conventions and internals: [docs/remote-exec-convention
 | `rrun doctor <host\|--all>` | Health-check ssh + auth + remote python (`--all` opens real connections to every machine) |
 | `rrun close [<host>\|--all]` | Close ssh ControlMaster multiplexed connections |
 
-Useful `exec` flags: `--lang bash|powershell|python`, `--workdir`, `--env K=V`, `--timeout`, `--python <path>` (skip detection), `--no-mux`, `-q`.
+Useful `exec` flags: `--lang bash|powershell|python`, `--workdir`/`--env K=V` (not for Windows+python), `--timeout`, `--python <path>` (skip detection), `--no-mux`, `-q`.
 
 ### Exit codes
 

@@ -43,6 +43,10 @@ ScriptBlock 执行；控制台输出编码强制置 UTF-8，中文双向不乱�
 全灭时 exec 热路径不做隐式安装，报错提示跑 `rrun setup`。
 machines.json 的 `"python"` 字段或 `--python` 可跳过探测与版本校验。
 
+`--workdir`/`--env` 对 Windows+python **有意不支持**：没有可移植的 shell 层注入点，
+preamble 注入方案已否决——请在脚本内用 `os.chdir`/`os.environ`。
+完整权衡见 [windows-python-workdir-env.zh-CN.md](windows-python-workdir-env.zh-CN.md)。
+
 ### bash 载荷
 
 `bash -s -- args...`，`--workdir`/`--env` 翻译成 `cd`/`env` 前缀。

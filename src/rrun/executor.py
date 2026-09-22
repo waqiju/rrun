@@ -352,7 +352,7 @@ def run(host: str, lang: str = "", file: str = "", content: str = "", args=(),
             py_cmd += " " + " ".join(shlex.quote(a) for a in args)
         if env or workdir:
             if machine.is_windows:
-                raise ValueError("workdir/env are not supported for Windows+python yet; use os.chdir/os.environ inside the script")
+                raise ValueError("workdir/env are not supported for Windows+python (by design); use os.chdir/os.environ inside the script")
             remote_cmd = _posix_prefix(workdir, env) + py_cmd
         else:
             remote_cmd = py_cmd

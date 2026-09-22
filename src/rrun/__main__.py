@@ -287,9 +287,9 @@ def main() -> None:
     ep.add_argument("-c", "--content", help="inline script content (archived to ~/.rrun/drops/)")
     ep.add_argument("args", nargs="*",
                     help="script arguments (ASCII only; use -- to separate from options)")
-    ep.add_argument("--workdir", help="remote working directory (bash/powershell only)")
+    ep.add_argument("--workdir", help="remote working directory (not for Windows+python)")
     ep.add_argument("--env", action="append", metavar="KEY=VAL",
-                    help="remote environment variable (repeatable; ASCII only)")
+                    help="remote environment variable (repeatable; ASCII only; not for Windows+python)")
     ep.add_argument("--timeout", type=float, help="local timeout in seconds (exit=124 on expiry)")
     ep.add_argument("--python", dest="python", help="remote python path (skips auto-detection)")
     ep.add_argument("--no-utf8", action="store_true", help="do not pass -X utf8 to remote python")
