@@ -11,7 +11,7 @@ try:
 
     __version__ = _pkg_version("rrun-cli")
 except Exception:  # noqa: BLE001 - 未安装（源码直跑）时回退
-    __version__ = "0.2.1"
+    __version__ = "0.2.2"
 
 from .doctor import DoctorResult, check_machine
 from .executor import (

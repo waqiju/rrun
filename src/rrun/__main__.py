@@ -41,6 +41,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import __version__
 from .doctor import check_machine
 from .executor import RRUN_HOME, _check_ascii, _ssh_run, close_mux, run
 from .registry import load_machines, resolve_machine, scan_sources
@@ -277,6 +278,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         prog="rrun",
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="subcmd", required=True)
 
     ep = sub.add_parser("exec", help="execute a local script / inline content on a remote machine")

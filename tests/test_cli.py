@@ -1,7 +1,10 @@
-"""CLI 辅助函数测试：--env 解析、inline 落盘。"""
+"""CLI 辅助函数测试：--env 解析、inline 落盘、--version。"""
+
+import sys
 
 import pytest
 
+import rrun
 import rrun.__main__ as cli
 
 
@@ -27,3 +30,13 @@ class TestDropInline:
     def test_unknown_lang_txt(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli, "INLINE_DROP_DIR", tmp_path / "drops")
         assert cli._drop_inline("h", "weird", "x").suffix == ".txt"
+
+
+class TestVersion:
+    def test_version_flag(self, monkeypatch, capsys):
+        # argparse version action 打印到 stdout 并以 0 退出
+        monkeypatch.setattr(sys, "argv", ["rrun", "--version"])
+        with pytest.raises(SystemExit) as e:
+            cli.main()
+        assert e.value.code == 0
+        assert capsys.readouterr().out.strip() == f"rrun {rrun.__version__}"
