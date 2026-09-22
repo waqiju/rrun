@@ -33,7 +33,7 @@ sudo apt install sshpass                        # Debian/Ubuntu
 brew install hudochenkov/sshpass/sshpass        # macOS（sshpass 不在 homebrew-core）
 ```
 
-**远端要求**：开启密码认证的 OpenSSH 服务。Windows 远端经 PowerShell 执行，Mac/Linux 远端经 bash 执行。
+**远端要求**：OpenSSH 服务（密码或密钥认证均可）。Windows 远端经 PowerShell 执行，Mac/Linux 远端经 bash 执行。
 
 ## 快速上手
 
@@ -79,6 +79,7 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
 | `rrun config` | 诊断 machines.json 来源链 |
 | `rrun setup <host\|--all> [--force]` | 初始化远端统一 Python 3.12 venv（幂等） |
 | `rrun pip <host> -- list` | 在远端统一 venv 中执行 pip |
+| `rrun doctor <host\|--all>` | 健康检查：ssh + 认证 + 远端 python（`--all` 会向所有机器发起真实连接） |
 | `rrun close [<host>\|--all]` | 关闭 ssh ControlMaster 复用连接 |
 
 常用 `exec` 选项：`--lang bash|powershell|python`、`--workdir`、`--env K=V`、`--timeout`、
@@ -101,10 +102,17 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
   "defaults": { "windows": { "os": "Windows" } },
   "machines": [
     { "name": "my-win-box", "ip": "192.168.1.10", "os": "Windows",
-      "user": "admin", "password": "secret" }
+      "user": "admin", "password": "secret" },
+    { "name": "cloud-vm", "ip": "1.2.3.4", "port": 2222, "os": "Linux",
+      "user": "root", "identity_file": "~/.ssh/id_ed25519" }
   ]
 }
 ```
+
+单机字段：`name`/`ip`/`user` 必填；`password`（明文，走 sshpass）或留空走**密钥认证**
+（`identity_file` 可选——默认走 ssh key 链 / agent / `~/.ssh/config`，且启用 `BatchMode=yes`，
+密钥不可用时快速失败而不是卡住提示）；`port`（默认 `22`）；`os`（`Windows` / `Mac` / `Linux`）；
+可选 `hostname`（也可用于寻址）、`description`、`python`（显式远端解释器路径，跳过自动探测）。
 
 来源链按机器名 merge，高优先级覆盖（全部可选，失败静默跳过）：
 
@@ -135,7 +143,8 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
 ## 安全说明
 
 - `machines.json` 存的是**明文密码**：保持本地存放、`chmod 600`、绝不提交入库。
-- rrun 通过 `sshpass` 做密码认证；**暂不支持密钥认证**（在 roadmap 上）。
+- rrun 经 `sshpass` 做密码认证；**也支持密钥认证**（password 留空即可，详见上文配置节）。
+- 密钥认证以 `BatchMode=yes` 运行 ssh（无交互提示；密钥缺失/未授权时快速失败，不会把 stdin 里的脚本吃掉）。
 - 审计日志绝不记录密码；`--env` 的值只以 key 的形式记录。
 
 ## 审计与本地状态
@@ -153,8 +162,9 @@ pipx uninstall rrun-cli
 
 ## 参与贡献
 
-欢迎 issue 和 PR。开发环境：clone → `python3.12 -m venv .venv && .venv/bin/pip install -e .` →
-改完用 `rrun machines` 冒烟。发版靠推 `vX.Y.Z` tag，CI 经 trusted publishing 自动发布到 PyPI。
+欢迎 issue 和 PR。开发环境：clone → `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"` →
+`pytest` + `ruff check .` → 改完用 `rrun machines` 冒烟。CI 跑单测、ruff 和基于真实 sshd 容器的端到端测试。
+发版靠推 `vX.Y.Z` tag，CI 经 trusted publishing 自动发布到 PyPI。
 见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## License

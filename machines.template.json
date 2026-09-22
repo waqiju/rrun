@@ -28,6 +28,15 @@
       "user": "ubuntu",
       "password": "secret",
       "python": "/usr/bin/python3.12"
+    },
+    {
+      "name": "cloud-vm-key-auth",
+      "ip": "1.2.3.4",
+      "port": 2222,
+      "os": "Linux",
+      "user": "root",
+      "identity_file": "~/.ssh/id_ed25519",
+      "description": "password omitted -> key auth (BatchMode); port overrides 22"
     }
   ]
 }

@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-22
+
+### Added
+
+- **Key-based SSH auth**: leave `password` empty in machines.json to use the default ssh key
+  chain / agent / `~/.ssh/config` (optional `identity_file` field); runs with `BatchMode=yes`
+  so auth failure is fast instead of prompting. `sshpass` is only required for password auth.
+- **Custom SSH port**: per-machine `port` field (default 22), honored by exec/setup/pip/close/doctor.
+- **`rrun doctor <host|--all>`**: health check (ssh connectivity + auth + remote python probe,
+  reports whether the unified venv is in use). Single machine by default — `--all` opens real
+  connections to every machine.
+- Unit test suite (pytest, 49 tests covering the registry merge chain, PS wrapper, ssh arg
+  assembly, setup script generation, CLI helpers) and ruff lint config; `pip install -e ".[dev]"`.
+- CI: `ci.yml` runs ruff + unit tests + an end-to-end suite against a real sshd container
+  (ubuntu 24.04, password + key auth, custom port, CJK content, exit-code passthrough, doctor),
+  and gates the PyPI publish workflow.
+- `machines --json` output gains `port` and `auth` fields.
+
+### Changed
+
+- Password auth now passes `NumberOfPasswordPrompts=1` (fail fast on wrong password).
+
 ## [0.1.2] - 2026-09-22
 
 ### Changed
@@ -45,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unified remote Python 3.12 venv provisioning (python-build-standalone streamed over ssh stdin).
 - Zero runtime dependencies; dual CLI entry points `rrun` and `remote-machine`.
 
+[0.2.0]: https://github.com/waqiju/rrun/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/waqiju/rrun/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/waqiju/rrun/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/waqiju/rrun/releases/tag/v0.1.0

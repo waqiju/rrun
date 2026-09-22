@@ -75,6 +75,7 @@ The full set of hard-won conventions and internals: [docs/remote-exec-convention
 | `rrun config` | Diagnose the machines.json source chain |
 | `rrun setup <host\|--all> [--force]` | Provision the unified remote Python 3.12 venv (idempotent) |
 | `rrun pip <host> -- list` | Run pip inside the remote unified venv |
+| `rrun doctor <host\|--all>` | Health-check ssh + auth + remote python (`--all` opens real connections to every machine) |
 | `rrun close [<host>\|--all]` | Close ssh ControlMaster multiplexed connections |
 
 Useful `exec` flags: `--lang bash|powershell|python`, `--workdir`, `--env K=V`, `--timeout`, `--python <path>` (skip detection), `--no-mux`, `-q`.
@@ -96,10 +97,14 @@ Credentials live in local `machines.json` files — see [machines.template.json]
   "defaults": { "windows": { "os": "Windows" } },
   "machines": [
     { "name": "my-win-box", "ip": "192.168.1.10", "os": "Windows",
-      "user": "admin", "password": "secret" }
+      "user": "admin", "password": "secret" },
+    { "name": "cloud-vm", "ip": "1.2.3.4", "port": 2222, "os": "Linux",
+      "user": "root", "identity_file": "~/.ssh/id_ed25519" }
   ]
 }
 ```
+
+Per-machine fields: `name`/`ip`/`user` are required; `password` (plaintext, via sshpass) or leave it empty for **key-based auth** (`identity_file` optional — the default ssh key chain / agent / `~/.ssh/config` applies, with `BatchMode=yes` so a missing key fails fast instead of prompting); `port` (default `22`); `os` (`Windows` / `Mac` / `Linux`); optional `hostname` (also resolvable), `description`, `python` (explicit remote interpreter, skips auto-detection).
 
 Sources are merged by machine name, highest priority first (all optional, failures skipped silently):
 
@@ -124,8 +129,8 @@ If none match, run `rrun setup <host>`. It is idempotent and non-destructive: if
 
 ## Security
 
-- `machines.json` stores **plaintext passwords**. Keep it local, `chmod 600`, never commit it.
-- rrun authenticates with passwords via `sshpass`; **key-based authentication is not supported yet** (on the roadmap).
+- `machines.json` stores **plaintext passwords**. Keep it local, `chmod 600`, never commit it — or leave `password` empty and use key-based auth instead.
+- Key-based auth runs ssh with `BatchMode=yes` (no interactive prompts; a missing/unauthorized key fails fast instead of eating the script from stdin).
 - The audit log never records passwords, and `--env` values are logged as keys only.
 
 ## Auditing & state
@@ -143,7 +148,7 @@ pipx uninstall rrun-cli
 
 ## Contributing
 
-Issues and PRs are welcome. Development setup: clone → `python3.12 -m venv .venv && .venv/bin/pip install -e .` → hack → smoke-test with `rrun machines`. Releases are cut by pushing a `vX.Y.Z` tag; CI builds and publishes to PyPI via trusted publishing. See [CHANGELOG.md](CHANGELOG.md).
+Issues and PRs are welcome. Development setup: clone → `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"` → hack → `pytest` + `ruff check .` → smoke-test with `rrun machines`. CI runs unit tests, ruff, and an end-to-end suite against a real sshd container. Releases are cut by pushing a `vX.Y.Z` tag; CI builds and publishes to PyPI via trusted publishing. See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

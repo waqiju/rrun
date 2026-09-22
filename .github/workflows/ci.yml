@@ -1,0 +1,117 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:  # publish.yml 复用为发布门禁
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (dev extras)
+        run: pip install -e ".[dev]"
+      - name: Ruff
+        run: ruff check .
+      - name: Pytest
+        run: pytest -q
+
+  e2e:
+    # 起一台带密码 sshd 的 ubuntu:24.04 容器（自带 python3.12），
+    # 真跑 rrun exec：覆盖 bash/python 路径、自定义端口、密码/key 双认证。
+    # Windows/PowerShell 路径无法容器化，仍靠实机手测。
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install rrun + sshpass
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          pip install .
+
+      - name: Start sshd container (ubuntu 24.04, password auth, python3.12)
+        run: |
+          docker run -d --name rrun-e2e -p 2222:22 ubuntu:24.04 bash -c '
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq openssh-server python3.12
+            mkdir -p /run/sshd
+            echo "root:rrun-e2e-pw" | chpasswd
+            sed -i "s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config
+            sed -i "s/^#\?PermitRootLogin.*/PermitRootLogin yes/" /etc/ssh/sshd_config
+            mkdir -p /root/.ssh && chmod 700 /root/.ssh
+            exec /usr/sbin/sshd -D -e'
+          for i in $(seq 1 90); do
+            docker exec rrun-e2e pgrep -x sshd >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "sshd did not come up" >&2
+          docker logs rrun-e2e >&2 || true
+          exit 1
+
+      - name: Authorize a test key (for the key-auth machine)
+        run: |
+          mkdir -p "$HOME/.ssh"
+          ssh-keygen -t ed25519 -N "" -q -f "$HOME/.ssh/e2e_key"
+          docker exec -i rrun-e2e bash -c "cat >> /root/.ssh/authorized_keys" < "$HOME/.ssh/e2e_key.pub"
+
+      - name: Register test machines (custom port 2222)
+        run: |
+          cat > e2e-machines.json <<EOF
+          {
+            "machines": [
+              {"name": "e2e-pw",  "ip": "127.0.0.1", "port": 2222, "os": "Linux", "user": "root", "password": "rrun-e2e-pw"},
+              {"name": "e2e-key", "ip": "127.0.0.1", "port": 2222, "os": "Linux", "user": "root", "identity_file": "$HOME/.ssh/e2e_key"}
+            ]
+          }
+          EOF
+          echo "RRUN_CONFIG=$PWD/e2e-machines.json" >> "$GITHUB_ENV"
+
+      - name: machines + config diagnose
+        run: |
+          rrun machines
+          rrun config
+
+      - name: exec bash (CJK content + exit-code passthrough, password auth)
+        run: |
+          printf 'echo "你好 rrun"\nexit 42\n' > /tmp/e2e.sh
+          set +e
+          rrun exec e2e-pw /tmp/e2e.sh > out.txt 2>/dev/null
+          rc=$?
+          set -e
+          cat out.txt
+          [ "$rc" -eq 42 ]
+          grep -q "你好 rrun" out.txt
+
+      - name: exec python (auto-detect 3.12, key auth, -c inline)
+        run: |
+          rrun exec e2e-key --lang python -c 'import sys; print("py", *sys.version_info[:3]); print("中文 ok")' > out.txt 2>/dev/null
+          cat out.txt
+          grep -q "py 3 12" out.txt
+          grep -q "中文 ok" out.txt
+
+      - name: exec python script file (password auth)
+        run: |
+          printf 'import sys\nassert sys.version_info[:2] == (3, 12)\nprint("script ok")\n' > /tmp/e2e.py
+          rrun exec e2e-pw /tmp/e2e.py 2>/dev/null | grep -q "script ok"
+
+      - name: doctor (fallback python -> exit 1 with guidance)
+        run: |
+          set +e
+          rrun doctor e2e-pw > doctor.txt 2>&1
+          rc=$?
+          set -e
+          cat doctor.txt
+          [ "$rc" -eq 1 ]
+          grep -q "fallback" doctor.txt

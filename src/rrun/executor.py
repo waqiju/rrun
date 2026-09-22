@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """远程执行核心：本地脚本 → ssh stdin 管道 → 远端解释器执行。
 
 设计要点（Phase 0 spike 实测验证）：
@@ -164,18 +163,35 @@ def build_bash_command(args=(), workdir: str = "", env: "dict | None" = None) ->
     return cmd
 
 
+def _ssh_args(machine: Machine, mux: bool) -> "list[str]":
+    """组装 ssh/sshpass 参数：认证（密码走 sshpass，否则 key 链 + BatchMode）、端口、mux。"""
+    args: list[str] = []
+    if machine.password:
+        sshpass = shutil.which("sshpass")
+        if not sshpass:
+            raise RuntimeError("sshpass not found on this machine (install: sudo apt install sshpass / brew install hudochenkov/sshpass/sshpass)")
+        args += [sshpass, "-p", machine.password]
+    args.append("ssh")
+    if machine.password:
+        args += ["-o", "NumberOfPasswordPrompts=1"]  # 密码错误快速失败，不反复提示
+    else:
+        # key 认证：禁交互提示（防密码 prompt 把 stdin 脚本吃掉/挂起）
+        args += ["-o", "BatchMode=yes"]
+    if machine.identity_file:
+        args += ["-i", str(Path(machine.identity_file).expanduser())]
+    args += SSH_BASE_OPTS
+    if machine.port != 22:
+        args += ["-p", str(machine.port)]
+    if mux:
+        CONTROL_PATH_DIR.mkdir(mode=0o700, exist_ok=True)
+        args += MUX_OPTS
+    return args
+
+
 def _ssh_run(machine: Machine, remote_cmd: str, stdin: bytes, timeout: "float | None",
              mux: bool) -> "tuple[int, bytes, bytes, bool]":
     """返回 (exit_code, stdout, stderr, timed_out)。exit 255 即传输层错误。"""
-    sshpass = shutil.which("sshpass")
-    if not sshpass:
-        raise RuntimeError("sshpass not found on this machine (install: sudo apt install sshpass / brew install hudochenkov/sshpass/sshpass)")
-    if mux:
-        CONTROL_PATH_DIR.mkdir(mode=0o700, exist_ok=True)
-    args = [sshpass, "-p", machine.password, "ssh", *SSH_BASE_OPTS]
-    if mux:
-        args += MUX_OPTS
-    args += [machine.target, remote_cmd]
+    args = [*_ssh_args(machine, mux), machine.target, remote_cmd]
     try:
         p = subprocess.run(args, input=stdin, capture_output=True,
                            timeout=timeout if timeout and timeout > 0 else None)
@@ -356,7 +372,11 @@ def _write_audit(result: ExecResult, args, workdir: str, env: "dict | None",
 def close_mux(host: str) -> "tuple[int, str]":
     """关闭某台机器的 ControlMaster 复用连接。"""
     machine = resolve_machine(host)
-    p = subprocess.run(
-        ["ssh", "-O", "exit", "-o", f"ControlPath={CONTROL_PATH}", machine.target],
-        capture_output=True, text=True, timeout=15)
+    args = ["ssh", "-O", "exit", "-o", f"ControlPath={CONTROL_PATH}"]
+    if machine.port != 22:
+        args += ["-p", str(machine.port)]
+    if machine.identity_file:
+        args += ["-i", str(Path(machine.identity_file).expanduser())]
+    args.append(machine.target)
+    p = subprocess.run(args, capture_output=True, text=True, timeout=15)
     return p.returncode, (p.stdout + p.stderr).strip()

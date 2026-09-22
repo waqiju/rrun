@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rrun-cli"
-version = "0.1.2"
+version = "0.2.0"
 description = "Run local scripts on remote machines over SSH via stdin pipes — no escaping/encoding hell. Supports python/powershell/bash, with a unified remote Python 3.12 venv provisioner."
 readme = "README.md"
 license = "MIT"
@@ -23,6 +23,9 @@ classifiers = [
 ]
 # 纯标准库实现，零第三方依赖。控制端仅需本机有 ssh + sshpass。
 dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.urls]
 Homepage = "https://github.com/waqiju/rrun"
@@ -43,3 +46,16 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 rrun = ["remote-requirements.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "BLE"]
+# E501 交给格式化宽限：项目内大量中文注释 + 单行 wrapper 模板，硬限 120 收益低
+ignore = ["E501"]

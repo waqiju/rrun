@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """机器注册表：多来源加载 machines.json，按优先级 merge，解析 name/ip/hostname → Machine。
 
 来源链（高 → 低优先级；同名机器高优先级覆盖；同名/ip 冲突静默处理，不刷警告）：
@@ -24,7 +23,7 @@ from pathlib import Path
 ENV_MACHINES_JSON = "RRUN_CONFIG"
 ENV_MACHINES_JSON_LEGACY = "REMOTE_MACHINE_CONFIG"
 
-_KNOWN_KEYS = {"name", "ip", "user", "password", "os", "hostname", "description", "python"}
+_KNOWN_KEYS = {"name", "ip", "user", "password", "os", "hostname", "description", "python", "port", "identity_file"}
 
 
 @dataclass
@@ -32,11 +31,13 @@ class Machine:
     name: str
     ip: str
     user: str
-    password: str = field(repr=False)  # 凭据不进 repr/日志
+    password: str = field(repr=False, default="")  # 凭据不进 repr/日志；留空 = 走 key 认证
     os: str = "Windows"                # 原样取值：Windows / Mac / Linux
     hostname: str = ""
     description: str = ""
     python: str = ""                   # 可选：显式指定远端 python 路径，跳过自动探测
+    port: int = 22                     # SSH 端口
+    identity_file: str = ""            # 可选：私钥路径（password 为空时走默认 key 链/agent）
     source: str = ""                   # 来源文件路径（多来源 merge 时记录出处）
 
     @property
@@ -56,6 +57,7 @@ class Machine:
         return {
             "name": self.name, "ip": self.ip, "os": self.os, "user": self.user,
             "hostname": self.hostname, "description": self.description,
+            "port": self.port, "auth": "password" if self.password else "key",
             "default_lang": self.default_lang, "source": self.source,
         }
 
@@ -72,7 +74,7 @@ class SourceInfo:
 
 def candidate_sources() -> "list[tuple[str, Path]]":
     """返回 (标签, 路径) 有序来源链（高→低优先级），按 resolved path 去重。"""
-    cands: "list[tuple[str, Path]]" = []
+    cands: list[tuple[str, Path]] = []
     for env_name in (ENV_MACHINES_JSON, ENV_MACHINES_JSON_LEGACY):
         env = os.environ.get(env_name, "")
         env_paths = [x for x in env.split(os.pathsep) if x.strip()]
@@ -90,8 +92,8 @@ def candidate_sources() -> "list[tuple[str, Path]]":
         cands.append(("legacy", Path(r"C:\tools\remote-machine\machines.json")))
     else:
         cands.append(("legacy", Path.home() / ".remote-machine" / "machines.json"))
-    seen: "set[str]" = set()
-    uniq: "list[tuple[str, Path]]" = []
+    seen: set[str] = set()
+    uniq: list[tuple[str, Path]] = []
     for label, p in cands:
         try:
             key = os.path.normcase(str(p.resolve()))
@@ -113,6 +115,8 @@ def _load_file(path: Path) -> "list[Machine]":
         base = defaults.get(str(m.get("os", "")).lower()) or {}
         merged = {**base, **m}  # 机器自身字段优先于 defaults
         kwargs = {k: v for k, v in merged.items() if k in _KNOWN_KEYS}
+        if "port" in kwargs:
+            kwargs["port"] = int(kwargs["port"])
         machine = Machine(**kwargs)
         machine.source = str(path)
         result.append(machine)
@@ -123,7 +127,7 @@ def load_machines(path: "str | os.PathLike | None" = None) -> "list[Machine]":
     """加载机器清单。显式传 path = 单文件模式；否则按来源链 merge（同名高优先级胜）。"""
     if path:
         return _load_file(Path(path))
-    merged: "dict[str, Machine]" = {}
+    merged: dict[str, Machine] = {}
     for _label, p in candidate_sources():
         if not p.is_file():
             continue

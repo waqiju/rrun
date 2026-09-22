@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """rrun CLI — run local scripts on remote machines over SSH stdin pipes.
 
 Core contract: script content (UTF-8, CJK welcome) is piped to the remote
@@ -12,6 +11,7 @@ Usage:
     rrun exec mac_mini --lang python temp/x.py
     rrun setup <host|--all> [--force]   # provision the unified python env (3.12 venv)
     rrun pip <host> -- list             # run pip in the unified venv
+    rrun doctor <host|--all>            # health-check ssh + auth + remote python
     rrun machines                       # list machines (redacted, with source)
     rrun config                         # diagnose the machines.json source chain
     rrun close [<host>|--all]           # close ssh multiplexed connections
@@ -29,6 +29,8 @@ Conventions:
       255=ssh transport error; 124=local timeout.
     - Inline -c content is archived under ~/.rrun/drops/ for replay.
     - Audit: every execution appends to ~/.rrun/log/remote-exec.jsonl.
+    - Auth: machines.json "password" => sshpass; leave it empty for key-based
+      ssh ("identity_file" optional); "port" overrides the default ssh port 22.
 
 Remote stdout -> local stdout, stderr -> stderr; the exit code is the remote one.
 """
@@ -39,6 +41,7 @@ import sys
 import time
 from pathlib import Path
 
+from .doctor import check_machine
 from .executor import RRUN_HOME, _check_ascii, _ssh_run, close_mux, run
 from .registry import load_machines, resolve_machine, scan_sources
 from .setup import setup_machine, venv_python_or_die
@@ -69,7 +72,7 @@ def cmd_exec(ns) -> int:
     try:
         machine = resolve_machine(ns.host)
     except KeyError as e:
-        raise SystemExit(f"[remote-exec] {e}")
+        raise SystemExit(f"[remote-exec] {e}") from None
 
     content = ns.content
     file = ns.script or ""
@@ -98,7 +101,7 @@ def cmd_exec(ns) -> int:
             mux=not ns.no_mux,
         )
     except (ValueError, RuntimeError) as e:
-        raise SystemExit(f"[remote-exec] {e}")
+        raise SystemExit(f"[remote-exec] {e}") from None
 
     if not ns.quiet:
         via = script_for_log or "<stdin>"
@@ -113,7 +116,7 @@ def cmd_exec(ns) -> int:
     if result.timed_out:
         print(f"[remote-exec] local timeout ({ns.timeout}s), ssh client killed", file=sys.stderr)
     elif result.transport_error:
-        print(f"[remote-exec] ssh transport error (unreachable / auth failure / dropped), exit=255", file=sys.stderr)
+        print("[remote-exec] ssh transport error (unreachable / auth failure / dropped), exit=255", file=sys.stderr)
     if not ns.quiet:
         print(f"[remote-exec] exit={result.exit_code} took {result.duration:.1f}s", file=sys.stderr)
     return result.exit_code
@@ -199,7 +202,7 @@ def cmd_pip(ns) -> int:
     try:
         machine = resolve_machine(ns.host)
     except KeyError as e:
-        raise SystemExit(f"[pip] {e}")
+        raise SystemExit(f"[pip] {e}") from None
     args = list(ns.pargs or []) + list(getattr(ns, "args", []) or [])
     if not args:
         raise SystemExit("[pip] missing pip args, e.g.: rrun pip <host> -- list")
@@ -207,7 +210,7 @@ def cmd_pip(ns) -> int:
         _check_ascii(args, "pip args")
         py = venv_python_or_die(ns.host)
     except (ValueError, RuntimeError) as e:
-        raise SystemExit(f"[pip] {e}")
+        raise SystemExit(f"[pip] {e}") from None
     joined = " ".join(args)
     if machine.is_windows:
         remote_cmd = f'"{py}" -m pip {joined}'
@@ -221,6 +224,35 @@ def cmd_pip(ns) -> int:
     sys.stderr.buffer.flush()
     print(f"[pip] {machine.name} exit={rc} took {time.time() - t0:.1f}s", file=sys.stderr)
     return rc
+
+
+def cmd_doctor(ns) -> int:
+    if ns.all:
+        hosts = [m.name for m in load_machines()]
+    elif ns.host:
+        hosts = [ns.host]
+    else:
+        raise SystemExit("[doctor] specify a host, or --all to check every machine")
+    results = []
+    if len(hosts) == 1:
+        print(f"[doctor] checking {hosts[0]} ...", file=sys.stderr)
+        results.append(check_machine(hosts[0]))
+    else:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=ns.jobs) as pool:
+            futs = {pool.submit(check_machine, h): h for h in hosts}
+            for f in as_completed(futs):
+                r = f.result()
+                results.append(r)
+                print(f"[doctor] {r.host}: {'ok' if r.ok else 'FAIL'} ({r.latency_s:.1f}s)", file=sys.stderr)
+    print(f"\n{'host':<24} {'result':<6} {'ssh':<5} {'python':<10} {'via':<14} note")
+    for r in sorted(results, key=lambda x: x.host):
+        ssh = "ok" if r.ssh_ok else "FAIL"
+        ver = r.python_version or "-"
+        via = ("unified venv" if r.is_unified_venv else ("fallback" if r.python_path else "-"))
+        note = "; ".join(r.checks) if r.ok else r.message
+        print(f"{r.host:<24} {'ok' if r.ok else 'FAIL':<6} {ssh:<5} {ver:<10} {via:<14} {note[:90]}")
+    return 0 if all(r.ok for r in results) else 1
 
 
 def cmd_close(ns) -> int:
@@ -285,6 +317,12 @@ def main() -> None:
     pp.add_argument("--timeout", type=float, default=300.0, help="local timeout in seconds (default 300)")
     pp.set_defaults(func=cmd_pip)
 
+    dp = sub.add_parser("doctor", help="health-check a machine (ssh + auth + remote python)")
+    dp.add_argument("host", nargs="?", help="machine name/ip; omit with --all")
+    dp.add_argument("--all", action="store_true", help="check every machine (opens real ssh connections)")
+    dp.add_argument("--jobs", type=int, default=6, help="concurrency for --all (default 6)")
+    dp.set_defaults(func=cmd_doctor)
+
     cp = sub.add_parser("close", help="close ssh ControlMaster multiplexed connections")
     cp.add_argument("host", nargs="?", help="machine name/ip; omit with --all")
     cp.add_argument("--all", action="store_true", help="close connections for all machines")
@@ -293,7 +331,7 @@ def main() -> None:
     # argparse 对 -- 的处理与子解析器/位置参数组合有 quirk，手动切分更可靠：
     # 第一个 -- 之后的全部内容原样作为脚本参数
     argv = sys.argv[1:]
-    passthrough: "list[str] | None" = None
+    passthrough: list[str] | None = None
     if "--" in argv:
         i = argv.index("--")
         argv, passthrough = argv[:i], argv[i + 1:]
