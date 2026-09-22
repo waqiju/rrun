@@ -38,6 +38,7 @@ from .executor import (
     _check_ascii,
     _ssh_run,
     build_ps_wrapper,
+    check_remote_pip,
     probe_python,
     probe_python_version,
 )
@@ -54,6 +55,8 @@ PBS_ASSETS = {
     ("Windows", "x86_64"): f"cpython-{PBS_VER}+{PBS_TAG}-x86_64-pc-windows-msvc-install_only.tar.gz",
     ("Mac", "arm64"): f"cpython-{PBS_VER}+{PBS_TAG}-aarch64-apple-darwin-install_only.tar.gz",
     ("Mac", "x86_64"): f"cpython-{PBS_VER}+{PBS_TAG}-x86_64-apple-darwin-install_only.tar.gz",
+    ("Linux", "x86_64"): f"cpython-{PBS_VER}+{PBS_TAG}-x86_64-unknown-linux-gnu-install_only.tar.gz",
+    ("Linux", "aarch64"): f"cpython-{PBS_VER}+{PBS_TAG}-aarch64-unknown-linux-gnu-install_only.tar.gz",
 }
 PBS_DOWNLOAD_BASE = f"https://github.com/astral-sh/python-build-standalone/releases/download/{PBS_TAG}/"
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", "") or Path.home() / ".cache") / "rrun"
@@ -109,6 +112,13 @@ def _ensure_local_tarball(os_name: str, arch: str) -> Path:
     return path
 
 
+def _pbs_platform(uname_sm: str) -> "tuple[str, str]":
+    """`uname -sm` 输出 -> PBS_ASSETS 键（'Linux x86_64'->('Linux','x86_64')，'Darwin arm64'->('Mac','arm64')）。"""
+    parts = uname_sm.split()
+    sys_name, arch = (parts + ["", ""])[:2]
+    return {"Darwin": "Mac", "Linux": "Linux"}.get(sys_name, sys_name), arch
+
+
 def _install_standalone(machine: Machine, mux: bool, timeout: float) -> str:
     """推送 standalone python 到远端并解压，返回基座 python 路径。"""
     if machine.is_windows:
@@ -123,11 +133,10 @@ def _install_standalone(machine: Machine, mux: bool, timeout: float) -> str:
         )
         base_py = BASE_PY_WIN
     else:
-        rc, out, _, _ = _ssh_run(machine, "uname -m", b"", 30, mux)
-        arch = out.decode("utf-8", "replace").strip()
-        os_name = "Mac"
+        rc, out, _, _ = _ssh_run(machine, "uname -sm", b"", 30, mux)
+        os_name, arch = _pbs_platform(out.decode("utf-8", "replace"))
         if (os_name, arch) not in PBS_ASSETS:
-            raise RuntimeError(f"[{machine.name}] unsupported architecture: {arch}")
+            raise RuntimeError(f"[{machine.name}] no standalone python build for platform: {os_name} {arch}")
         extract_cmd = (
             'tools="$HOME/.remote-machine"; mkdir -p "$tools" '
             '&& rm -rf "$tools/python312" '
@@ -149,7 +158,11 @@ def _install_standalone(machine: Machine, mux: bool, timeout: float) -> str:
 
 
 def _build_ps_setup(base_py: str, pkgs: "list[str]", force: bool) -> str:
-    """Windows 一键脚本：建 venv（缺/force 时）→ pip.ini → 装依赖 → 自检。全 ASCII。"""
+    """Windows 一键脚本：建 venv（缺/坏/force 时）→ pip.ini → 装依赖 → 自检。全 ASCII。
+
+    “坏” = bin/python 在但 pip 不在：上次 venv 创建中途失败（如 ensurepip 缺失）
+    留下的半拉子 venv，直接重建（幂等自愈）。
+    """
     pkg_args = " ".join(pkgs)
     imports = ";".join(f"import {_req_import_name(p)}" for p in pkgs) or "pass"
     force_lit = "$true" if force else "$false"
@@ -159,6 +172,10 @@ $venv="$tools\\venv"
 $venvPy="$venv\\Scripts\\python.exe"
 New-Item -ItemType Directory -Force $tools | Out-Null
 if({force_lit} -and (Test-Path $venv)){{Remove-Item -Recurse -Force $venv}}
+if(Test-Path $venvPy){{
+  & $venvPy -m pip --version *>$null
+  if($LASTEXITCODE -ne 0){{Remove-Item -Recurse -Force $venv}}
+}}
 if(-not (Test-Path $venvPy)){{
   if('{base_py}' -eq ''){{Write-Error "no base python";exit 1}}
   & '{base_py}' -m venv $venv
@@ -184,6 +201,9 @@ tools="$HOME/.remote-machine"
 venv="$tools/venv"
 mkdir -p "$tools"
 if [ "{'1' if force else '0'}" = "1" ]; then rm -rf "$venv"; fi
+if [ -x "$venv/bin/python" ] && ! "$venv/bin/python" -m pip --version >/dev/null 2>&1; then
+  rm -rf "$venv"
+fi
 if [ ! -x "$venv/bin/python" ]; then
   "{base_py}" -m venv "$venv"
 fi
@@ -209,13 +229,20 @@ def setup_machine(host: str, force: bool = False, mux: bool = True,
         base_cands = WINDOWS_BASE_CANDIDATES if machine.is_windows else POSIX_BASE_CANDIDATES
 
         hit = probe_python(machine, [venv_py], mux)
-        need_create = force or not hit
+        # 半拉子 venv（python 能跑但 pip 不在——上次创建中途失败的残留）也视为待重建；
+        # 否则远端脚本删掉坏 venv 后会拿空 base_py 去重建，必然失败
+        venv_broken = bool(hit) and not check_remote_pip(machine, hit[0], mux)
+        need_create = force or not hit or venv_broken
         base_py = ""
         if need_create:
-            base_hit = probe_python(machine, base_cands, mux)
+            # 基座资格：版本 3.12 且带 ensurepip（缺 ensurepip 的系统 python 建不了 venv，
+            # Debian/Ubuntu 未装 python3.x-venv 的典型场景）——不合格则装 standalone 基座
+            base_hit = probe_python(machine, base_cands, mux, require_ensurepip=True)
             if base_hit:
                 base_py = base_hit[0]
             else:
+                print(f"[setup] [{machine.name}] no venv-capable python 3.12 base found; "
+                      f"installing standalone python ...", file=sys.stderr)
                 base_py = _install_standalone(machine, mux, timeout)
                 result.installed_standalone = True
             result.created_venv = True

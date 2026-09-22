@@ -8,16 +8,19 @@ import time
 from dataclasses import dataclass, field
 
 from .executor import (
+    POSIX_BASE_CANDIDATES,
     POSIX_PYTHON_CANDIDATES,
     PS_REMOTE_CMD,
     VENV_PY_POSIX,
     VENV_PY_WIN,
+    WINDOWS_BASE_CANDIDATES,
     WINDOWS_PYTHON_CANDIDATES,
     _ssh_run,
     build_ps_wrapper,
+    check_remote_pip,
     probe_python,
 )
-from .registry import resolve_machine
+from .registry import Machine, resolve_machine
 
 
 @dataclass
@@ -31,6 +34,20 @@ class DoctorResult:
     is_unified_venv: bool = False
     checks: "list[str]" = field(default_factory=list)  # 已通过的检查项描述
     message: str = ""                                   # 失败原因 / 建议
+
+
+def _venv_missing_guidance(machine: Machine, found_version: str, mux: bool) -> str:
+    """venv 缺失时的指引：审查基座资格（ensurepip），说明 setup 将会走哪条路。"""
+    base_cands = WINDOWS_BASE_CANDIDATES if machine.is_windows else POSIX_BASE_CANDIDATES
+    base = probe_python(machine, base_cands, mux, require_ensurepip=True)
+    if base:
+        head = "unified venv missing" if found_version else "no python 3.12 found"
+        return f"{head}; run: rrun setup {machine.name}"
+    hint = " (Debian/Ubuntu: sudo apt install python3.12-venv)" if not machine.is_windows else ""
+    if found_version:
+        return (f"unified venv missing; base python {found_version} lacks ensurepip{hint}; "
+                f"rrun setup {machine.name} will install a standalone python")
+    return f"no python 3.12 found; rrun setup {machine.name} will install a standalone python"
 
 
 def check_machine(host: str, mux: bool = True, timeout: float = 30.0) -> DoctorResult:
@@ -80,9 +97,13 @@ def check_machine(host: str, mux: bool = True, timeout: float = 30.0) -> DoctorR
                 "/.remote-machine/venv/bin/python")
         tag = "unified venv" if r.is_unified_venv else "fallback (not the unified venv)"
         r.checks.append(f"python {r.python_version} at {r.python_path} [{tag}]")
-        if not r.is_unified_venv:
-            r.message = f"unified venv missing; run: rrun setup {machine.name}"
+        if r.is_unified_venv:
+            if not check_remote_pip(machine, r.python_path, mux):
+                r.message = f"unified venv is broken (pip missing); repair: rrun setup {machine.name}"
+                return r
+        else:
+            r.message = _venv_missing_guidance(machine, r.python_version, mux)
     else:
-        r.message = f"no python 3.12 found; run: rrun setup {machine.name}"
+        r.message = _venv_missing_guidance(machine, "", mux)
     r.ok = r.ssh_ok and bool(hit) and r.is_unified_venv
     return r

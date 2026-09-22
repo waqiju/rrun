@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-09-22
+
+### Added
+
+- **Linux support for the standalone python fallback** (x86_64 / aarch64 gnu builds). Previously
+  the fallback assets only covered Windows/macOS — a bare Linux machine would even have pulled
+  the wrong (macOS) tarball.
+- **Base qualification**: `rrun setup` now requires a base python to actually be able to create
+  venvs (`ensurepip` importable). A system python 3.12 without it — the classic Debian/Ubuntu
+  split into the separate `python3.12-venv` package — is skipped in favor of the standalone
+  base, so bare Debian/Ubuntu machines provision with zero manual steps.
+- **Half-broken venv self-heal**: a venv whose creation died midway (python runs but pip is
+  missing, e.g. after an ensurepip failure) is detected and recreated by `rrun setup` —
+  previously it shadowed the working pythons and made every rerun fail.
+- `rrun doctor` reports both states: a broken unified venv (pip missing), and — when the venv
+  is absent — whether `setup` will use an existing base or install a standalone python
+  (with the `apt install python3.12-venv` alternative for Debian/Ubuntu).
+- CI e2e now exercises `rrun setup` for real: the ubuntu:24.04 container ships python3.12
+  without `python3.12-venv`, i.e. exactly the standalone-fallback scenario.
+
 ## [0.2.0] - 2026-09-22
 
 ### Added
@@ -67,6 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unified remote Python 3.12 venv provisioning (python-build-standalone streamed over ssh stdin).
 - Zero runtime dependencies; dual CLI entry points `rrun` and `remote-machine`.
 
+[0.2.1]: https://github.com/waqiju/rrun/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/waqiju/rrun/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/waqiju/rrun/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/waqiju/rrun/compare/v0.1.0...v0.1.1

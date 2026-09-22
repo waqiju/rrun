@@ -134,10 +134,12 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
 2. standalone 基座：`...\python312\python.exe` / `~/.remote-machine/python312/bin/python3`
 3. 存量装机：`C:\Python\Python312\python.exe` / PATH 上的 `python3.12`
 
-全灭则跑 `rrun setup <host>`。它幂等且非侵入：机器缺 Python 3.12 时，
-[python-build-standalone](https://github.com/astral-sh/python-build-standalone) 压缩包先下载到本机缓存
-（`~/.cache/rrun/`），再经 ssh stdin 推流到远端解压——零注册表、零 PATH 改动、零管理员权限，
-远端全程不访问 GitHub。venv 内自带 `pip.ini`/`pip.conf`（不碰全局 pip 配置），并按包内置
+全灭则跑 `rrun setup <host>`。它幂等且非侵入：机器缺少**能建 venv 的** Python 3.12 时——完全没装，
+或解释器建不了 venv（Debian/Ubuntu 把 `ensurepip` 拆进了独立的 `python3.12-venv` 包）——
+[python-build-standalone](https://github.com/astral-sh/python-build-standalone) 压缩包（Windows/macOS/Linux）
+先下载到本机缓存（`~/.cache/rrun/`），再经 ssh stdin 推流到远端解压——零注册表、零 PATH 改动、零管理员权限，
+远端全程不访问 GitHub。上次 setup 中途失败留下的半拉子 venv（python 能跑但缺 pip）会被自动检测并重建。
+这些状态 `rrun doctor <host>` 都会预先报告。venv 内自带 `pip.ini`/`pip.conf`（不碰全局 pip 配置），并按包内置
 `remote-requirements.txt` 安装标准依赖（可用 `~/.rrun/remote-requirements.txt` 覆盖）。
 
 ## 安全说明

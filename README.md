@@ -125,7 +125,7 @@ For `python` scripts, rrun requires a **3.12.x** interpreter on the remote, prob
 2. Standalone base: `...\python312\python.exe` / `~/.remote-machine/python312/bin/python3`
 3. Existing installs: `C:\Python\Python312\python.exe` / `python3.12` on PATH
 
-If none match, run `rrun setup <host>`. It is idempotent and non-destructive: if the machine lacks Python 3.12, a [python-build-standalone](https://github.com/astral-sh/python-build-standalone) tarball is downloaded to the local cache (`~/.cache/rrun/`) and streamed over ssh stdin — no registry, no PATH changes, no admin rights, and the remote never touches GitHub. The venv gets its own `pip.ini`/`pip.conf` (global pip config untouched) plus the standard packages from the bundled `remote-requirements.txt` (override with `~/.rrun/remote-requirements.txt`).
+If none match, run `rrun setup <host>`. It is idempotent and non-destructive: if the machine lacks a **venv-capable** Python 3.12 — none installed, or the interpreter cannot create venvs (Debian/Ubuntu split `ensurepip` into the separate `python3.12-venv` package) — a [python-build-standalone](https://github.com/astral-sh/python-build-standalone) tarball (Windows/macOS/Linux) is downloaded to the local cache (`~/.cache/rrun/`) and streamed over ssh stdin — no registry, no PATH changes, no admin rights, and the remote never touches GitHub. A half-created venv left by an interrupted earlier setup (python runs but pip is missing) is detected and recreated automatically. `rrun doctor <host>` reports all of these states before you provision. The venv gets its own `pip.ini`/`pip.conf` (global pip config untouched) plus the standard packages from the bundled `remote-requirements.txt` (override with `~/.rrun/remote-requirements.txt`).
 
 ## Security
 

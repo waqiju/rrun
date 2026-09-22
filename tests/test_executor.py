@@ -5,8 +5,12 @@ import base64
 import pytest
 
 from rrun.executor import (
+    _PY_BASE_CHECK_CODE,
+    _PY_VER_CHECK_CODE,
+    _bash_probe_script,
     _check_ascii,
     _posix_prefix,
+    _ps_probe_script,
     _ps_quote,
     _ssh_args,
     build_bash_command,
@@ -72,6 +76,29 @@ class TestBashCommand:
     def test_non_ascii_args_rejected(self):
         with pytest.raises(ValueError, match="ASCII"):
             build_bash_command(args=["中文"])
+
+
+class TestProbeScripts:
+    def test_bash_probe_default_is_version_only(self):
+        s = _bash_probe_script(["python3.12"])
+        assert "sys.version_info" in s
+        assert "ensurepip" not in s  # exec 热路径不做基座资格加码
+
+    def test_bash_probe_require_ensurepip(self):
+        s = _bash_probe_script(["python3.12", "/usr/local/bin/python3.12"], require_ensurepip=True)
+        assert "import ensurepip" in s
+
+    def test_ps_probe_require_ensurepip(self):
+        s = _ps_probe_script([r"C:\Python\Python312\python.exe"], require_ensurepip=True)
+        assert "import ensurepip" in s
+
+    def test_ps_probe_default_is_version_only(self):
+        assert "ensurepip" not in _ps_probe_script([r"C:\py\python.exe"])
+
+    def test_check_codes_contain_no_quotes(self):
+        # bash 探测用单引号包裹检查代码，代码内出现引号会破坏组装
+        for code in (_PY_VER_CHECK_CODE, _PY_BASE_CHECK_CODE):
+            assert "'" not in code and '"' not in code
 
 
 class TestPosixPrefix:

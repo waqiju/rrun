@@ -205,27 +205,33 @@ _PY_VER_PRINT_CODE = "import sys;print(*sys.version_info[:3],sep=chr(46))"
 _PY_VER_CHECK_CODE = (
     _PY_VER_PRINT_CODE + f";sys.exit(0 if sys.version_info[:2]=={REQUIRED_PY_MAJOR_MINOR} else 1)"
 )
+# 基座资格加码：ensurepip 必须可 import（Debian/Ubuntu 把 ensurepip 整体拆进 python3.x-venv
+# 包，缺失时系统 python 版本对却建不了 venv——不算合格基座）。import 失败即非零退出，候选跳过。
+_PY_BASE_CHECK_CODE = "import ensurepip;" + _PY_VER_CHECK_CODE
 
 
-def _ps_probe_script(candidates) -> str:
-    """Windows 探测脚本：逐候选校验版本==3.12.x，命中输出 path|x.y.z，全灭 exit 1。"""
+def _ps_probe_script(candidates, require_ensurepip: bool = False) -> str:
+    """Windows 探测脚本：逐候选校验（版本==3.12.x，require_ensurepip 时加 ensurepip 资格），
+    命中输出 path|x.y.z，全灭 exit 1。"""
+    check = _PY_BASE_CHECK_CODE if require_ensurepip else _PY_VER_CHECK_CODE
     arr = ",".join(_ps_quote(c) for c in candidates)
     return (
         f"foreach($c in @({arr})){{"
         "if(Test-Path $c){"
-        f"$v=& $c -X utf8 -c \"{_PY_VER_CHECK_CODE}\" 2>$null;"
+        f"$v=& $c -X utf8 -c \"{check}\" 2>$null;"
         "if($LASTEXITCODE -eq 0){Write-Output ($c+'|'+($v -join ''));exit 0}"
         "}}"
     )
 
 
-def _bash_probe_script(candidates) -> str:
+def _bash_probe_script(candidates, require_ensurepip: bool = False) -> str:
     """posix 探测脚本：同 Windows 语义。候选为可信常量（$HOME 需保留展开，不可 shlex.quote）。"""
+    check = _PY_BASE_CHECK_CODE if require_ensurepip else _PY_VER_CHECK_CODE
     items = " ".join(f'"{c}"' for c in candidates)
     return (
         f"for p in {items}; do\n"
         '  command -v "$p" >/dev/null 2>&1 || continue\n'
-        f'  v=$("$p" -X utf8 -c \'{_PY_VER_CHECK_CODE}\' 2>/dev/null) || continue\n'
+        f'  v=$("$p" -X utf8 -c \'{check}\' 2>/dev/null) || continue\n'
         '  echo "$p|$v"\n'
         "  exit 0\n"
         "done\n"
@@ -233,14 +239,19 @@ def _bash_probe_script(candidates) -> str:
     )
 
 
-def probe_python(machine: Machine, candidates, mux: bool = True) -> "tuple[str, str] | None":
-    """在候选中找版本==3.12.x 的远端 python，单次往返；返回 (路径, 版本)，全灭返回 None。"""
+def probe_python(machine: Machine, candidates, mux: bool = True,
+                 require_ensurepip: bool = False) -> "tuple[str, str] | None":
+    """在候选中找版本==3.12.x 的远端 python，单次往返；返回 (路径, 版本)，全灭返回 None。
+
+    require_ensurepip=True 用于 setup/doctor 的基座资格审查：无 ensurepip 的 python
+    建不了 venv（Debian/Ubuntu 拆包 python3.x-venv 的典型场景），跳过。
+    """
     if machine.is_windows:
         rc, out, _, _ = _ssh_run(machine, PS_REMOTE_CMD,
-                                 build_ps_wrapper(_ps_probe_script(candidates)), 60, mux)
+                                 build_ps_wrapper(_ps_probe_script(candidates, require_ensurepip)), 60, mux)
     else:
         rc, out, _, _ = _ssh_run(machine, "bash -s",
-                                 _bash_probe_script(candidates).encode("utf-8"), 60, mux)
+                                 _bash_probe_script(candidates, require_ensurepip).encode("utf-8"), 60, mux)
     if rc != 0 or not out.strip():
         return None
     line = out.decode("utf-8", "replace").strip().splitlines()[-1].strip()
@@ -260,6 +271,18 @@ def probe_python_version(machine: Machine, python_path: str, mux: bool = True) -
     if rc != 0 or not out.strip():
         return ""
     return out.decode("utf-8", "replace").strip().splitlines()[-1].strip()
+
+
+def check_remote_pip(machine: Machine, python_path: str, mux: bool = True) -> bool:
+    """检查指定远端 python 是否带 pip（半拉子 venv 检测：venv python 能跑，
+    但若创建时 ensurepip 失败过，venv 里就没有 pip）。"""
+    if machine.is_windows:
+        payload = build_ps_wrapper(f"& {_ps_quote(python_path)} -m pip --version *>$null")
+        rc, _, _, _ = _ssh_run(machine, PS_REMOTE_CMD, payload, 30, mux)
+    else:
+        rc, _, _, _ = _ssh_run(machine, "bash -s",
+                               f'"{python_path}" -m pip --version >/dev/null 2>&1\n'.encode(), 30, mux)
+    return rc == 0
 
 
 def detect_remote_python(machine: Machine, override: str = "", mux: bool = True) -> "tuple[str, str]":

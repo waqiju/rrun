@@ -22,8 +22,9 @@ jobs:
         run: pytest -q
 
   e2e:
-    # 起一台带密码 sshd 的 ubuntu:24.04 容器（自带 python3.12），
-    # 真跑 rrun exec：覆盖 bash/python 路径、自定义端口、密码/key 双认证。
+    # 起一台带密码 sshd 的 ubuntu:24.04 容器（python3.12 但无 python3.12-venv——
+    # 即 Debian 系 ensurepip 拆包场景），真跑 rrun exec + setup：覆盖 bash/python 路径、
+    # 自定义端口、密码/key 双认证、standalone 基座 fallback、半拉子 venv 自愈。
     # Windows/PowerShell 路径无法容器化，仍靠实机手测。
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -115,3 +116,14 @@ jobs:
           cat doctor.txt
           [ "$rc" -eq 1 ]
           grep -q "fallback" doctor.txt
+          grep -q "ensurepip" doctor.txt  # 基座缺 ensurepip → 指引（表格 note 截断于 90 字符内可见）
+
+      - name: setup (no venv-capable base -> standalone fallback)
+        run: rrun setup e2e-pw
+
+      - name: doctor + exec python via the new unified venv
+        run: |
+          rrun doctor e2e-pw
+          rrun exec e2e-pw --lang python -c 'import sys, requests; assert "/venv/" in sys.executable; print("venv ok", requests.__version__)' > out.txt 2>/dev/null
+          cat out.txt
+          grep -q "venv ok" out.txt

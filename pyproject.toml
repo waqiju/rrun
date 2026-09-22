@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rrun-cli"
-version = "0.2.0"
+version = "0.2.1"
 description = "Run local scripts on remote machines over SSH via stdin pipes — no escaping/encoding hell. Supports python/powershell/bash, with a unified remote Python 3.12 venv provisioner."
 readme = "README.md"
 license = "MIT"
