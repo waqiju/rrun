@@ -1,0 +1,33 @@
+{
+  "defaults": {
+    "windows": { "os": "Windows" },
+    "mac": { "os": "Mac" },
+    "linux": { "os": "Linux" }
+  },
+  "machines": [
+    {
+      "name": "my-win-box",
+      "ip": "192.168.1.10",
+      "os": "Windows",
+      "user": "admin",
+      "password": "secret",
+      "description": "Windows build box"
+    },
+    {
+      "name": "my-mac-mini",
+      "hostname": "mac-mini.local",
+      "ip": "192.168.1.20",
+      "os": "Mac",
+      "user": "admin",
+      "password": "secret"
+    },
+    {
+      "name": "my-linux",
+      "ip": "192.168.1.30",
+      "os": "Linux",
+      "user": "ubuntu",
+      "password": "secret",
+      "python": "/usr/bin/python3.12"
+    }
+  ]
+}

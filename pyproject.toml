@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rrun"
+version = "0.1.0"
+description = "Run local scripts on remote machines over SSH via stdin pipes — no escaping/encoding hell. Supports python/powershell/bash, with a unified remote Python 3.12 venv provisioner."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "waqiju" }]
+keywords = ["ssh", "remote-exec", "powershell", "windows", "ops", "automation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Systems Administration",
+]
+# 纯标准库实现，零第三方依赖。控制端仅需本机有 ssh + sshpass。
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/waqiju/rrun"
+Repository = "https://github.com/waqiju/rrun"
+Issues = "https://github.com/waqiju/rrun/issues"
+
+[project.scripts]
+rrun = "rrun.__main__:main"
+remote-machine = "rrun.__main__:main"  # 旧名别名，兼容期保留
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rrun = ["remote-requirements.txt"]

@@ -1,0 +1,4 @@
+# rrun 远端统一 venv 的标准依赖（setup 时安装）。
+# 用户级覆盖：~/.rrun/remote-requirements.txt 存在时优先生效。
+# 加依赖：改文件 → rrun setup <host>（幂等补装）。
+requests

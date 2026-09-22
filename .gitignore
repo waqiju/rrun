@@ -1,0 +1,20 @@
+# Byte-compiled / build
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+
+# venv
+.venv/
+venv/
+
+# 凭据与本地状态，永不入库
+machines.json
+!machines.template.json
+.rrun/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
