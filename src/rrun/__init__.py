@@ -11,7 +11,7 @@ try:
 
     __version__ = _pkg_version("rrun-cli")
 except Exception:  # noqa: BLE001 - 未安装（源码直跑）时回退
-    __version__ = "0.2.4"
+    __version__ = "0.3.0"
 
 from .doctor import DoctorResult, check_machine
 from .executor import (
@@ -27,10 +27,12 @@ from .executor import (
 )
 from .registry import Machine, SourceInfo, candidate_sources, load_machines, resolve_machine, scan_sources
 from .setup import SetupResult, load_requirements, setup_machine
+from .transfer import EXIT_INTEGRITY, TransferResult, pull, push
 
 __all__ = [
-    "AUDIT_LOG", "EXIT_TIMEOUT", "EXIT_TRANSPORT_ERROR", "RRUN_HOME",
-    "DoctorResult", "ExecResult", "Machine", "SetupResult", "SourceInfo",
+    "AUDIT_LOG", "EXIT_INTEGRITY", "EXIT_TIMEOUT", "EXIT_TRANSPORT_ERROR", "RRUN_HOME",
+    "DoctorResult", "ExecResult", "Machine", "SetupResult", "SourceInfo", "TransferResult",
     "build_ps_wrapper", "candidate_sources", "check_machine", "close_mux", "detect_remote_python",
-    "load_machines", "load_requirements", "resolve_machine", "run", "scan_sources", "setup_machine",
+    "load_machines", "load_requirements", "pull", "push", "resolve_machine", "run",
+    "scan_sources", "setup_machine",
 ]

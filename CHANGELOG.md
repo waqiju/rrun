@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-24
+
+### Added
+
+- **`rrun push` / `rrun pull`**: single-file transfer over the existing ssh pipes — no
+  scp/sftp, no new dependencies. Atomic on both ends (temp file + sha256 + rename), parent
+  directories auto-created, overwrite by default (rename makes it safe), `~` expands on the
+  remote, `-` streams from stdin / to stdout, cp-style directory-target semantics, and every
+  transfer appends to the audit log. New exit code **3** for integrity mismatch.
+  Design + rationale: `docs/push-pull-design.md`.
+- **Windows push transport**: chunked single-line `powershell -Command -` calls (the proven
+  exec channel) with base64-embedded payloads — pure ASCII on the wire. This sidesteps a
+  real OpenSSH-Windows (9.5p1) defect where the child-stdin pump drops/deadlocks on data
+  that arrives after process start once flow control kicks in; streamed `ReadLine` /
+  `OpenStandardInput` receivers hang intermittently there. Windows pull is raw binary over
+  stdout (verified byte-exact). Details in the design doc.
+- **Mux self-healing**: a transfer killed by `--timeout` now closes the host's ControlMaster
+  connection proactively — a killed mid-transfer channel otherwise wedges the shared master,
+  hanging *all* subsequent muxed operations (including `exec`) until `ControlPersist`
+  expires.
+
 ## [0.2.4] - 2026-09-23
 
 ### Fixed

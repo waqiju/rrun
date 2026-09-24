@@ -69,6 +69,8 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
 | 命令 | 用途 |
 |---|---|
 | `rrun exec <host> <script\|-c ...>` | 在远端执行本地脚本 / 内联内容 |
+| `rrun push <host> <local> <remote>` | 推文件到远端（原子替换 + sha256 校验；`-` = stdin；自动建父目录） |
+| `rrun pull <host> <remote> <local>` | 从远端拉文件（原子替换 + sha256 校验；`-` = stdout） |
 | `rrun machines [--json]` | 列出合并后的机器（脱敏，含来源） |
 | `rrun config [init\|add\|edit]` | 管理用户级机器清单（`init` 按内置模板生成、`add` 以向导/旗帜追加、`edit` 用 `$EDITOR` 打开）；裸 `config` 诊断来源链 |
 | `rrun setup <host\|--all> [--force]` | 初始化远端统一 Python 3.12 venv（幂等） |
@@ -79,11 +81,16 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
 常用 `exec` 选项：`--lang bash|powershell|python`、`--workdir`/`--env K=V`（Windows+python 不支持）、`--timeout`、
 `--python <path>`（跳过探测）、`--no-mux`、`-q`。
 
+`push`/`pull` 传输单文件（目录会被拒绝——tar 走管道是预留的扩展方向）。目标以 `/` 结尾
+或是已存在目录时保留源文件名；`~` 在远端展开。设计权衡与 Windows 传输背后的
+OpenSSH-Windows stdio 坑：[docs/push-pull-design.zh-CN.md](docs/push-pull-design.zh-CN.md)。
+
 ### 退出码
 
 | 退出码 | 含义 |
 |---|---|
 | `0`–`254` | 远端脚本自身的退出码，原样透传 |
+| `3` | `push`/`pull` 完整性校验失败（sha256 不符；临时文件已删，未 rename） |
 | `255` | ssh 传输层失败（连不上 / 认证失败 / 掉线） |
 | `124` | 本地 `--timeout` 超时，本地 ssh 客户端已被杀 |
 

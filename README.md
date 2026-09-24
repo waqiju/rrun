@@ -65,6 +65,8 @@ The full set of hard-won conventions and internals: [docs/remote-exec-convention
 | Command | Purpose |
 |---|---|
 | `rrun exec <host> <script\|-c ...>` | Execute a local script / inline content remotely |
+| `rrun push <host> <local> <remote>` | Copy a file to the remote (atomic temp+rename, sha256-verified; `-` = stdin; parents auto-created) |
+| `rrun pull <host> <remote> <local>` | Copy a file from the remote (atomic, sha256-verified; `-` = stdout) |
 | `rrun machines [--json]` | List merged machines (redacted, with source) |
 | `rrun config [init\|add\|edit]` | Manage the user inventory (`init` scaffolds from the bundled template, `add` appends via wizard/flags, `edit` opens `$EDITOR`); bare `config` diagnoses the source chain |
 | `rrun setup <host\|--all> [--force]` | Provision the unified remote Python 3.12 venv (idempotent) |
@@ -74,11 +76,17 @@ The full set of hard-won conventions and internals: [docs/remote-exec-convention
 
 Useful `exec` flags: `--lang bash|powershell|python`, `--workdir`/`--env K=V` (not for Windows+python), `--timeout`, `--python <path>` (skip detection), `--no-mux`, `-q`.
 
+`push`/`pull` transfer single files (directories are rejected — tar over the pipe is the
+planned extension). A trailing `/` or an existing directory keeps the source basename; `~`
+expands on the remote. Design rationale and the OpenSSH-Windows stdio pitfalls behind the
+Windows transport: [docs/push-pull-design.md](docs/push-pull-design.md).
+
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
 | `0`–`254` | The remote script's own exit code, passed through unchanged |
+| `3` | `push`/`pull` integrity check failed (sha256 mismatch; temp file deleted, nothing renamed) |
 | `255` | ssh transport failure (unreachable / auth failure / connection dropped) |
 | `124` | local `--timeout` expired; the local ssh client was killed |
 

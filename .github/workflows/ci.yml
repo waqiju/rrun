@@ -127,3 +127,39 @@ jobs:
           rrun exec e2e-pw --lang python -c 'import sys, requests; assert "/venv/" in sys.executable; print("venv ok", requests.__version__)' > out.txt 2>/dev/null
           cat out.txt
           grep -q "venv ok" out.txt
+
+      - name: push + pull (text, CJK name, ~ expansion, auto-mkdir)
+        run: |
+          set -e
+          printf '你好 rrun transfer\n' > 中文.txt
+          rrun push e2e-pw 中文.txt '~/xfer/sub/中文.txt' 2>err.txt   # 目录不存在 → 自动建
+          grep -q 'sha256 verified' err.txt
+          rrun pull e2e-pw '~/xfer/sub/中文.txt' - 2>/dev/null | grep -q '你好 rrun transfer'
+
+      - name: push + pull (binary round-trip, key auth; sha256 must match)
+        run: |
+          set -e
+          head -c 300000 /dev/urandom > bin.dat
+          rrun push e2e-key bin.dat /tmp/xfer/bin.dat 2>/dev/null
+          rrun pull e2e-key /tmp/xfer/bin.dat bin.back 2>/dev/null
+          cmp bin.dat bin.back
+          # 覆写（原子替换）
+          printf 'v2\n' > bin.dat
+          rrun push e2e-key bin.dat /tmp/xfer/bin.dat 2>/dev/null
+          rrun pull e2e-key /tmp/xfer/bin.dat - 2>/dev/null | grep -q '^v2$'
+
+      - name: push via stdin / directory target keeps basename / pull of missing file fails
+        run: |
+          set -e
+          printf 'pipe 数据\n' | rrun push e2e-pw - /tmp/xfer/pipe.txt 2>/dev/null
+          rrun pull e2e-pw /tmp/xfer/pipe.txt - 2>/dev/null | grep -q 'pipe 数据'
+          rrun exec e2e-pw --lang bash -c 'mkdir -p /tmp/xfer/dir' 2>/dev/null
+          rrun push e2e-pw bin.dat /tmp/xfer/dir/ 2>/dev/null
+          rrun exec e2e-pw --lang bash -c 'cmp /tmp/xfer/dir/bin.dat /tmp/xfer/bin.dat' 2>/dev/null
+          set +e
+          rrun pull e2e-pw /tmp/xfer/definitely-missing.bin - >/dev/null 2>err.txt
+          rc=$?
+          set -e
+          [ "$rc" -eq 1 ]
+          grep -q 'remote file not found' err.txt
+          ls /tmp/xfer/definitely-missing.bin 2>/dev/null && exit 1 || true  # 失败不落盘

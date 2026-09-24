@@ -9,6 +9,8 @@ Usage:
     rrun exec <host> -c "Write-Output hello"        # lang inferred from remote OS
     rrun exec pc_build temp/x.py --timeout 60
     rrun exec mac_mini --lang python temp/x.py
+    rrun push <host> <local> <remote>   # copy a file to the remote ('-' = stdin)
+    rrun pull <host> <remote> <local>   # copy a file from the remote ('-' = stdout)
     rrun setup <host|--all> [--force]   # provision the unified python env (3.12 venv)
     rrun pip <host> -- list             # run pip in the unified venv
     rrun doctor <host|--all>            # health-check ssh + auth + remote python
@@ -27,7 +29,10 @@ Conventions:
       the standalone base, then existing installs; all missing -> run `rrun setup`
       first (exec never installs implicitly on the hot path).
     - Exit codes: the remote exit code passes through unchanged;
-      255=ssh transport error; 124=local timeout.
+      255=ssh transport error; 124=local timeout; 3=integrity mismatch (push/pull).
+    - push/pull transfer single files atomically (temp file + sha256 + rename);
+      remote parents are auto-created; stdout carries payload only, so
+      `rrun pull host path - | tar xz` is lossless. See docs/push-pull-design.md.
     - Inline -c content is archived under ~/.rrun/drops/ for replay.
     - Audit: every execution appends to ~/.rrun/log/remote-exec.jsonl.
     - Auth: machines.json "password" => sshpass; leave it empty for key-based
@@ -48,6 +53,8 @@ from .doctor import check_machine
 from .executor import RRUN_HOME, _check_ascii, _ssh_run, close_mux, run
 from .registry import EMPTY_INVENTORY_HINT, load_machines, resolve_machine
 from .setup import setup_machine, venv_python_or_die
+from .transfer import pull as transfer_pull
+from .transfer import push as transfer_push
 
 INLINE_DROP_DIR = RRUN_HOME / "drops"
 
@@ -212,6 +219,64 @@ def cmd_pip(ns) -> int:
     return rc
 
 
+def _fmt_size(n: int) -> str:
+    """人类可读字节数。"""
+    size = float(max(n, 0))
+    unit = "B"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            break
+        size /= 1024
+    return f"{n} B" if unit == "B" else f"{size:.1f} {unit}"
+
+
+def cmd_push(ns) -> int:
+    try:
+        result = transfer_push(ns.host, ns.local, ns.remote,
+                               timeout=ns.timeout, mux=not ns.no_mux)
+    except (ValueError, RuntimeError, OSError) as e:
+        raise SystemExit(f"[push] {e}") from None
+    if result.exit_code == 0:
+        if not ns.quiet:
+            print(f"[push] {result.host}: {result.local_path} -> {result.remote_path} "
+                  f"({_fmt_size(result.size)}, {_fmt_duration(result.duration)}, sha256 verified)",
+                  file=sys.stderr)
+    else:
+        _print_transfer_error("push", result)
+    return result.exit_code
+
+
+def cmd_pull(ns) -> int:
+    try:
+        result = transfer_pull(ns.host, ns.remote, ns.local,
+                               timeout=ns.timeout, mux=not ns.no_mux)
+    except (ValueError, RuntimeError, OSError) as e:
+        raise SystemExit(f"[pull] {e}") from None
+    if result.exit_code == 0:
+        if not ns.quiet:
+            print(f"[pull] {result.host}: {result.remote_path} -> {result.local_path} "
+                  f"({_fmt_size(result.size)}, {_fmt_duration(result.duration)}, sha256 verified)",
+                  file=sys.stderr)
+    else:
+        _print_transfer_error("pull", result)
+    return result.exit_code
+
+
+def _fmt_duration(s: float) -> str:
+    return f"{s:.1f}s"
+
+
+def _print_transfer_error(op: str, result) -> None:
+    if result.timed_out:
+        print(f"[{op}] local timeout, ssh client killed (exit=124)", file=sys.stderr)
+    elif result.transport_error:
+        print(f"[{op}] ssh transport error (unreachable / auth failure / dropped), exit=255",
+              file=sys.stderr)
+    else:
+        detail = result.message or "unknown remote error"
+        print(f"[{op}] {result.host}: {detail} (exit={result.exit_code})", file=sys.stderr)
+
+
 def cmd_doctor(ns) -> int:
     if ns.all:
         hosts = [m.name for m in load_machines()]
@@ -316,6 +381,25 @@ def main() -> None:
     ce = cfsub.add_parser("edit", help="open ~/.rrun/machines.json in $EDITOR "
                                        "(creates it from the template first if missing)")
     ce.set_defaults(func=cmd_config_edit)
+
+    tp = sub.add_parser("push", help="copy a local file to a remote machine (atomic, sha256-verified)")
+    tp.add_argument("host", help="machine name/ip/hostname")
+    tp.add_argument("local", help="local file path, or '-' to stream from stdin")
+    tp.add_argument("remote", help="remote destination path (trailing / or existing directory keeps\n"
+                                   "the source basename; '~' expands remotely)")
+    tp.add_argument("--timeout", type=float, help="local timeout in seconds (exit=124 on expiry)")
+    tp.add_argument("--no-mux", action="store_true", help="disable ssh ControlMaster multiplexing")
+    tp.add_argument("-q", "--quiet", action="store_true", help="suppress [push] info lines")
+    tp.set_defaults(func=cmd_push)
+
+    lp = sub.add_parser("pull", help="copy a remote file to the local machine (atomic, sha256-verified)")
+    lp.add_argument("host", help="machine name/ip/hostname")
+    lp.add_argument("remote", help="remote source path ('~' expands remotely)")
+    lp.add_argument("local", help="local destination path, or '-' to stream to stdout")
+    lp.add_argument("--timeout", type=float, help="local timeout in seconds (exit=124 on expiry)")
+    lp.add_argument("--no-mux", action="store_true", help="disable ssh ControlMaster multiplexing")
+    lp.add_argument("-q", "--quiet", action="store_true", help="suppress [pull] info lines")
+    lp.set_defaults(func=cmd_pull)
 
     sp = sub.add_parser("setup", help="provision the unified remote python environment (3.12 venv)")
     sp.add_argument("host", nargs="?", help="machine name/ip; use --all for every machine")
