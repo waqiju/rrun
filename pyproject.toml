@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rrun-cli"
-version = "0.3.1"
+version = "0.3.2"
 description = "Agent-friendly remote execution over SSH: scripts via stdin pipes (no quoting/encoding hell), credentials stay on disk and out of agent context. python/powershell/bash, plus a unified remote Python 3.12 venv provisioner."
 readme = "README.md"
 license = "MIT"

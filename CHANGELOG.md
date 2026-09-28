@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-09-28
+
+### Changed
+
+- **README as a landing page** (both languages): a real terminal demo ("What it looks
+  like"), an honest "Is rrun for you?" fit section (vs Ansible / rsync / plain ssh / MCP),
+  and a FAQ (the plaintext-password trade-off, Windows control side via WSL, the 3.12 pin,
+  transfer scope, performance). "Use with AI agents" now follows the quickstart. GitHub
+  repository metadata (description, topics) updated to match the agent-friendly
+  positioning. No functional changes.
+
 ## [0.3.1] - 2026-09-28
 
 ### Added

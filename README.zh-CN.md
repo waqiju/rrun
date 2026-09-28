@@ -7,15 +7,28 @@
 
 **[English](README.md)**
 
-**为 AI agent 而生的 SSH 远程执行。** 通过 SSH 在远程机器上执行本地脚本——**一律走 stdin 管道，绝不走命令行参数**——让引号、转义和
-中文/UTF-8 编码在 `bash → ssh → cmd/powershell` 的多层旅途中完好无损。凭据只存在于本地
-`machines.json`（权限 600），永远不进入 agent 的对话上下文。
+**为 AI agent 而生的 SSH 远程执行。** rrun 把你的本地脚本送到远程机器上执行——Windows、macOS、Linux 均可——一律走 stdin 管道，绝不走命令行参数。引号、转义、中文/UTF-8 内容完好到达；凭据只存在本地 `machines.json`（权限 600）里，永远不进入 agent 的对话上下文。
 
 - 为人类和 AI agent 而设计：写一个脚本文件，`rrun exec host file`，拿回原汁原味的输出和远端退出码——没有引号谜题，没有密码出现在提示词里
 - 支持 python / powershell / bash，按文件扩展名或远端 OS 自动推断
 - ssh ControlMaster 连接复用：首连 ~0.5s，复用 ~0.02s
 - `rrun setup` 一键初始化**远端统一 Python 3.12 venv**——远端无需访问外网
 - 零第三方 Python 依赖
+
+## 实际效果
+
+```console
+$ cat hello.py
+print("你好，Windows")
+
+$ rrun exec pc_build hello.py      # 中文走 stdin 管道，完好到达
+你好，Windows
+
+$ rrun push pc_build dist.zip C:/builds/
+[push] pc_build: dist.zip -> C:/builds/ (12.4 MB, 3.2s, sha256 verified)
+```
+
+远端无需装 agent，没有引号谜题，命令行上没有密码——你只需要知道机器名。
 
 ## 安装
 
@@ -52,23 +65,6 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
 
 核心循环就这么多：本地写脚本 → 远端执行 → 拿回输出和退出码。
 
-## 为什么
-
-从 POSIX shell 在远程 Windows 上执行命令是个雷区：sshd 把你落进 GBK 代码页的 cmd，引号和 `$`
-被沿途三层 shell 中的某层吞掉，任何非 ASCII 参数都会变成乱码。rrun 的规则：
-
-- 脚本内容（UTF-8，中文随便用）一律走 **stdin**，绝不走命令行；
-- PowerShell 载荷被 base64 包进**单行纯 ASCII wrapper**（`powershell -Command -` 按行执行 stdin，
-  多行输入会静默失败），远端解码后以 ScriptBlock 调用；
-- 命令行参数只放行 ASCII，安全透传（`sys.argv` / `$@` / `$args`）。更复杂的内容写进脚本或 JSON 文件。
-
-对 agent 来说还有第二层收益：任何凭据都不必出现在对话、提示词或日志里——agent 只管调用
-`rrun exec my-host ...`，密码始终留在本地 `machines.json` 里。而且「写文件 → exec」是确定性的，
-agent 不会在转义调试上浪费一个回合。
-
-完整的踩坑约定与实现内幕：[docs/remote-exec-conventions.zh-CN.md](docs/remote-exec-conventions.zh-CN.md)
-（[English](docs/remote-exec-conventions.md)）。
-
 ## 配合 AI agent 使用
 
 rrun 自带一个符合 [Agent Skills 规范](https://agentskills.io/specification)的 skill ——
@@ -91,6 +87,39 @@ pi 用户也可以把本仓库作为 pi package 安装：`pi install git:github.
 
 装好 skill 后，agent 还会自觉把密码挡在对话之外——机器缺失时它会请你**在自己的终端**跑
 `rrun config add`，而不是问你密码。
+
+## 为什么
+
+从 POSIX shell 在远程 Windows 上执行命令是个雷区：sshd 把你落进 GBK 代码页的 cmd，引号和 `$`
+被沿途三层 shell 中的某层吞掉，任何非 ASCII 参数都会变成乱码。rrun 的规则：
+
+- 脚本内容（UTF-8，中文随便用）一律走 **stdin**，绝不走命令行；
+- PowerShell 载荷被 base64 包进**单行纯 ASCII wrapper**（`powershell -Command -` 按行执行 stdin，
+  多行输入会静默失败），远端解码后以 ScriptBlock 调用；
+- 命令行参数只放行 ASCII，安全透传（`sys.argv` / `$@` / `$args`）。更复杂的内容写进脚本或 JSON 文件。
+
+对 agent 来说还有第二层收益：任何凭据都不必出现在对话、提示词或日志里——agent 只管调用
+`rrun exec my-host ...`，密码始终留在本地 `machines.json` 里。而且「写文件 → exec」是确定性的，
+agent 不会在转义调试上浪费一个回合。
+
+完整的踩坑约定与实现内幕：[docs/remote-exec-conventions.zh-CN.md](docs/remote-exec-conventions.zh-CN.md)
+（[English](docs/remote-exec-conventions.md)）。
+
+## rrun 适合你吗？
+
+**合适的场景：**
+
+- 几台到二十台上下、由你手工或交给 agent 操作的机器——构建机、homelab、云 VM
+- 混合环境：一部分远端是 Windows（PowerShell），另一部分是 macOS/Linux（bash）
+- 想让 coding agent 操作这些机器，又不想让它看到任何密码
+- 被 ssh 的引号/转义/中文乱码坑过不止一次
+
+**不合适的场景：**
+
+- 上百台机器的期望状态配置管理（幂等 playbook）→ 用 Ansible
+- 增量同步 / 断点续传 → 用 rsync
+- 纯 POSIX 环境的一次性命令 → 裸 `ssh host cmd` 就够
+- 必须要常驻 MCP server → rrun 刻意做成无状态 CLI + agent skill，任何 agent 都能用，不要求支持 MCP
 
 ## 子命令
 
@@ -179,6 +208,31 @@ OpenSSH-Windows stdio 坑：[docs/push-pull-design.zh-CN.md](docs/push-pull-desi
 - 审计日志绝不记录密码；`--env` 的值只以 key 的形式记录。
 - Agent 工作流：agent 只会调用 `rrun <host> ...`，密码因此不会进入对话、提示词或日志。
   内置 skill 明确禁止读取凭据文件——见 [skills/rrun/SKILL.zh-CN.md](skills/rrun/SKILL.zh-CN.md)。
+
+## 常见问题
+
+**machines.json 存明文密码，安全吗？**
+这是刻意权衡，如实相告：密码只躺在本地文件里（写入时权限 `600`），绝不出现在脚本、shell 历史、
+命令行或 agent 对话中——审计日志也不记录密码。如果不想存密码，把 `password` 留空即可，rrun 会走
+你的 ssh key 链（`identity_file`、agent、`~/.ssh/config`），并启用 `BatchMode=yes`。
+内置 agent skill 明确禁止 agent 读取凭据文件。
+
+**能从 Windows 机器上运行 rrun 吗？**
+Windows **远端**是一等公民（PowerShell 执行、分块文件传输）。但**控制端**需要 POSIX：
+密码认证依赖 `sshpass`、连接复用依赖 ssh ControlMaster，两者在 Windows 上都没有原生实现。
+日常用 Windows 的话，把 rrun 装进 **WSL**，从那里控制一切。
+
+**为什么远端 Python 锁定 3.12？**
+一个已知的良好基线，胜过「机器上恰好装了什么」。`rrun setup` 在每台机器上初始化独立的 3.12 venv，
+不碰系统 Python，你写的每个脚本都只需面对同一个解释器。
+
+**能传目录或大文件吗？**
+`push`/`pull` 传单文件，原子替换 + sha256 校验——几十 MB 是常规操作。目录按设计拒绝；
+tar 走管道是预留的扩展方向。重型同步请用 rsync。
+
+**快吗？**
+首次连接约 0.5 秒；之后 ssh ControlMaster 复用让每次调用约 0.02 秒。
+两端都没有 agent 或守护进程——只有 ssh。
 
 ## 审计与本地状态
 
