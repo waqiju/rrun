@@ -7,10 +7,10 @@
 
 **[中文文档](README.zh-CN.md)**
 
-Run local scripts on remote machines over SSH — **via stdin pipes, never via command-line arguments** — so quoting, escaping, and CJK/UTF-8 encoding survive the `bash → ssh → cmd/powershell` journey intact.
+**Agent-friendly remote execution over SSH.** Run local scripts on remote machines — **via stdin pipes, never via command-line arguments** — so quoting, escaping, and CJK/UTF-8 encoding survive the `bash → ssh → cmd/powershell` journey intact. Credentials live in a local `machines.json` (mode 600) and never enter your agent's context.
 
+- Built for AI agents and humans alike: write a script file, `rrun exec host file`, get verbatim output plus the remote exit code — no quoting puzzles, no passwords in prompts
 - python / powershell / bash, inferred from the file extension or the remote OS
-- Remote stdout/stderr stream back verbatim; the **exit code passes through**, so pipes and CI just work
 - ssh ControlMaster multiplexing: ~0.5s on first contact, ~0.02s afterwards
 - One-command provisioning of a unified **remote Python 3.12 venv** (`rrun setup`) — the remote never touches the internet
 - Zero third-party Python dependencies
@@ -58,7 +58,38 @@ Running commands on remote Windows machines from a POSIX shell is a minefield: s
 - PowerShell payloads are base64-wrapped into a **single-line pure-ASCII wrapper** (`powershell -Command -` executes stdin line-by-line; multi-line input fails silently), then decoded and invoked as a ScriptBlock remotely.
 - Command-line arguments are restricted to ASCII and passed through safely (`sys.argv` / `$@` / `$args`). Put anything fancier in the script itself or in a JSON file.
 
+Agents get a second dividend: no credential ever has to appear in a conversation, prompt, or
+log — the agent calls `rrun exec my-host ...` and the password stays inside the local
+`machines.json`. And because "write a file, then exec it" is deterministic, the agent burns
+zero turns on quoting debugging.
+
 The full set of hard-won conventions and internals: [docs/remote-exec-conventions.md](docs/remote-exec-conventions.md) ([中文](docs/remote-exec-conventions.zh-CN.md)).
+
+## Use with AI agents
+
+rrun ships an [Agent Skills](https://agentskills.io/specification) skill —
+[skills/rrun](skills/rrun) ([中文](skills/rrun/SKILL.zh-CN.md)) — that teaches any coding
+agent the whole workflow: bootstrap checks, credential discipline, exec/push/pull patterns,
+exit codes, and the CJK/quoting rules.
+
+Tell your agent:
+
+> Install the rrun skill from https://github.com/waqiju/rrun
+
+or run the cross-agent installer yourself (Claude Code, Codex, Cursor, pi, and 75+ more):
+
+```bash
+npx skills add waqiju/rrun          # detects your agents; add -g for user-level
+npx skills add waqiju/rrun --list   # preview without installing
+```
+
+pi users can alternatively install this repo as a pi package:
+`pi install git:github.com/waqiju/rrun`. Manual fallback: copy `skills/rrun/` into your
+agent's skills directory (e.g. `~/.agents/skills/rrun/`).
+
+With the skill installed, agents also know to keep your passwords out of the conversation —
+when a machine is missing they will ask *you* to run `rrun config add` in your own terminal
+instead of asking for the password.
 
 ## Subcommands
 
@@ -134,6 +165,9 @@ If none match, run `rrun setup <host>`. It is idempotent and non-destructive: if
 - `machines.json` stores **plaintext passwords**. Keep it local and never commit it — `rrun config init`/`add` already write the user inventory with mode `600` — or leave `password` empty and use key-based auth instead.
 - Key-based auth runs ssh with `BatchMode=yes` (no interactive prompts; a missing/unauthorized key fails fast instead of eating the script from stdin).
 - The audit log never records passwords, and `--env` values are logged as keys only.
+- Agent workflows: agents only ever invoke `rrun <host> ...`, so passwords never enter a
+  conversation, prompt, or log. The bundled skill explicitly forbids reading credential
+  files — see [skills/rrun/SKILL.md](skills/rrun/SKILL.md).
 
 ## Auditing & state
 
@@ -150,7 +184,7 @@ pipx uninstall rrun-cli
 
 ## Contributing
 
-Issues and PRs are welcome. Development setup: clone → `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"` → hack → `pytest` + `ruff check .` → smoke-test with `rrun machines`. CI runs unit tests, ruff, and an end-to-end suite against a real sshd container. Releases are cut by pushing a `vX.Y.Z` tag; CI builds and publishes to PyPI via trusted publishing. See [CHANGELOG.md](CHANGELOG.md).
+Issues and PRs are welcome. Development setup: clone → `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"` → hack → `pytest` + `ruff check .` → smoke-test with `rrun machines`. CI runs unit tests, ruff, and an end-to-end suite against a real sshd container. Releases are cut by pushing a `vX.Y.Z` tag; CI builds and publishes to PyPI via trusted publishing. The version lives in three places: `pyproject.toml`, the fallback in `src/rrun/__init__.py`, and `package.json` (agent-skill metadata) — bump all three. See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

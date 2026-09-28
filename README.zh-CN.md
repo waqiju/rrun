@@ -7,11 +7,12 @@
 
 **[English](README.md)**
 
-通过 SSH 在远程机器上执行本地脚本——**一律走 stdin 管道，绝不走命令行参数**——让引号、转义和
-中文/UTF-8 编码在 `bash → ssh → cmd/powershell` 的多层旅途中完好无损。
+**为 AI agent 而生的 SSH 远程执行。** 通过 SSH 在远程机器上执行本地脚本——**一律走 stdin 管道，绝不走命令行参数**——让引号、转义和
+中文/UTF-8 编码在 `bash → ssh → cmd/powershell` 的多层旅途中完好无损。凭据只存在于本地
+`machines.json`（权限 600），永远不进入 agent 的对话上下文。
 
+- 为人类和 AI agent 而设计：写一个脚本文件，`rrun exec host file`，拿回原汁原味的输出和远端退出码——没有引号谜题，没有密码出现在提示词里
 - 支持 python / powershell / bash，按文件扩展名或远端 OS 自动推断
-- 远端 stdout/stderr 原样回传；**退出码原样透传**，管道和 CI 直接可用
 - ssh ControlMaster 连接复用：首连 ~0.5s，复用 ~0.02s
 - `rrun setup` 一键初始化**远端统一 Python 3.12 venv**——远端无需访问外网
 - 零第三方 Python 依赖
@@ -61,8 +62,35 @@ rrun exec my-win-box demo.ps1            # 按 .ps1 推断为 powershell
   多行输入会静默失败），远端解码后以 ScriptBlock 调用；
 - 命令行参数只放行 ASCII，安全透传（`sys.argv` / `$@` / `$args`）。更复杂的内容写进脚本或 JSON 文件。
 
+对 agent 来说还有第二层收益：任何凭据都不必出现在对话、提示词或日志里——agent 只管调用
+`rrun exec my-host ...`，密码始终留在本地 `machines.json` 里。而且「写文件 → exec」是确定性的，
+agent 不会在转义调试上浪费一个回合。
+
 完整的踩坑约定与实现内幕：[docs/remote-exec-conventions.zh-CN.md](docs/remote-exec-conventions.zh-CN.md)
 （[English](docs/remote-exec-conventions.md)）。
+
+## 配合 AI agent 使用
+
+rrun 自带一个符合 [Agent Skills 规范](https://agentskills.io/specification)的 skill ——
+[skills/rrun](skills/rrun)（[English](skills/rrun/SKILL.md)）——把整个工作流教给任何 coding agent：
+引导检查、凭据纪律、exec/push/pull 模式、退出码、以及中文/转义规则。
+
+对你的 agent 说：
+
+> 安装 rrun skill：https://github.com/waqiju/rrun
+
+或者自己跑跨 agent 安装器（支持 Claude Code、Codex、Cursor、pi 等 80+ agent）：
+
+```bash
+npx skills add waqiju/rrun          # 自动探测你的 agent；加 -g 装到用户级
+npx skills add waqiju/rrun --list   # 只预览不安装
+```
+
+pi 用户也可以把本仓库作为 pi package 安装：`pi install git:github.com/waqiju/rrun`。
+手动兜底：把 `skills/rrun/` 拷进你的 agent 技能目录（如 `~/.agents/skills/rrun/`）。
+
+装好 skill 后，agent 还会自觉把密码挡在对话之外——机器缺失时它会请你**在自己的终端**跑
+`rrun config add`，而不是问你密码。
 
 ## 子命令
 
@@ -149,6 +177,8 @@ OpenSSH-Windows stdio 坑：[docs/push-pull-design.zh-CN.md](docs/push-pull-desi
 - rrun 经 `sshpass` 做密码认证；**也支持密钥认证**（password 留空即可，详见上文配置节）。
 - 密钥认证以 `BatchMode=yes` 运行 ssh（无交互提示；密钥缺失/未授权时快速失败，不会把 stdin 里的脚本吃掉）。
 - 审计日志绝不记录密码；`--env` 的值只以 key 的形式记录。
+- Agent 工作流：agent 只会调用 `rrun <host> ...`，密码因此不会进入对话、提示词或日志。
+  内置 skill 明确禁止读取凭据文件——见 [skills/rrun/SKILL.zh-CN.md](skills/rrun/SKILL.zh-CN.md)。
 
 ## 审计与本地状态
 
@@ -167,7 +197,8 @@ pipx uninstall rrun-cli
 
 欢迎 issue 和 PR。开发环境：clone → `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"` →
 `pytest` + `ruff check .` → 改完用 `rrun machines` 冒烟。CI 跑单测、ruff 和基于真实 sshd 容器的端到端测试。
-发版靠推 `vX.Y.Z` tag，CI 经 trusted publishing 自动发布到 PyPI。
+发版靠推 `vX.Y.Z` tag，CI 经 trusted publishing 自动发布到 PyPI。版本号住在三个地方：
+`pyproject.toml`、`src/rrun/__init__.py` 的兜底值、`package.json`（agent skill 元数据）——三处一起改。
 见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## License

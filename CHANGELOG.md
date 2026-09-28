@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-09-28
+
+### Added
+
+- **Agent skill** (`skills/rrun/`): an [Agent Skills](https://agentskills.io/specification)-spec
+  `SKILL.md` (English, with a 中文镜像) that teaches coding agents the whole rrun workflow —
+  bootstrap checks, **credential discipline** (passwords stay on disk, never in the
+  conversation), exec/push/pull patterns, exit codes, and the CJK/quoting rules. Install it
+  cross-agent with `npx skills add waqiju/rrun` (80+ agents, incl. Claude Code / Codex /
+  Cursor / pi), as a pi package (`pi install git:github.com/waqiju/rrun` — the repo now
+  carries a minimal `package.json` manifest), or by copying `skills/rrun/` into your agent's
+  skills directory (e.g. `~/.agents/skills/rrun/`).
+
+### Changed
+
+- **Repositioned as agent-friendly remote execution.** The README tagline/Why, a new
+  "Use with AI agents" section, and the PyPI description now state the second design goal
+  alongside the escaping/encoding one: credentials live in a local `machines.json` and
+  never enter an agent's context.
+
 ## [0.3.0] - 2026-09-24
 
 ### Added

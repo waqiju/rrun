@@ -1,0 +1,11 @@
+{
+  "name": "rrun-agent",
+  "version": "0.3.1",
+  "private": true,
+  "description": "Agent-skill packaging metadata (pi package / Agent Skills discovery). The rrun tool itself is a Python package — see pyproject.toml.",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "pi": {
+    "skills": ["./skills"]
+  }
+}
