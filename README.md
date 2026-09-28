@@ -230,6 +230,13 @@ pipx upgrade rrun-cli
 pipx uninstall rrun-cli
 ```
 
+## Roadmap
+
+rrun is feature-complete for its current scope. The next agreed iteration — a unified
+secret store covering machine *and* service credentials, designed so secrets never enter
+agent context — is written down in [ROADMAP.md](ROADMAP.md) ([中文](ROADMAP.zh-CN.md)) and
+awaits a future release window.
+
 ## Contributing
 
 Issues and PRs are welcome. Development setup: clone → `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"` → hack → `pytest` + `ruff check .` → smoke-test with `rrun machines`. CI runs unit tests, ruff, and an end-to-end suite against a real sshd container. Releases are cut by pushing a `vX.Y.Z` tag; CI builds and publishes to PyPI via trusted publishing. The version lives in three places: `pyproject.toml`, the fallback in `src/rrun/__init__.py`, and `package.json` (agent-skill metadata) — bump all three. See [CHANGELOG.md](CHANGELOG.md).

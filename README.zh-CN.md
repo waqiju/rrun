@@ -247,6 +247,12 @@ pipx upgrade rrun-cli
 pipx uninstall rrun-cli
 ```
 
+## Roadmap
+
+rrun 当前范围的功能已经完备。下一个已达成共识的迭代——统一管理机器与服务凭据的
+secret store，设计上保证秘密永不进入 agent 上下文——已记录在
+[ROADMAP.zh-CN.md](ROADMAP.zh-CN.md)（[English](ROADMAP.md)），留待未来的发版窗口实施。
+
 ## 参与贡献
 
 欢迎 issue 和 PR。开发环境：clone → `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"` →
